@@ -1,0 +1,122 @@
+==============================================================================
+REAL-WORLD CASE STUDY: 64 GB DDR4-3200 LAPTOP (WINDOWS 11 PRO 24H2 BUILD 26100)
+==============================================================================
+
+--- 1. BSOD MINIDUMP FORENSICS (`python -m badpage_hunter analyze-dumps`) ---
+
+Analyzed 5 crash dump(s) in C:\Windows\Minidump:
+
+==============================================================================
+FILE    : 101626-11953-01.dmp (OS 15.26100, 12 logical CPUs)
+BUGCHECK: 0x1000007E (SYSTEM_THREAD_EXCEPTION_NOT_HANDLED_M)
+  Param1: 0xFFFFFFFFC0000005
+  Param2: 0xFFFFF807DD37C320 -> ntoskrnl.exe+0x97C320
+  Param3: 0xFFFF878D6A5A6DD8
+  Param4: 0xFFFF878D6A5A65C0
+  [!] HARDWARE SINGLE-BIT FLIP DETECTED IN CPU REGISTERS:
+      R13: 0xFDFF9889F6F1C038 (Bit 57 flipped 1->0! Expected canonical kernel pointer: 0xFFFF9889F6F1C038)
+==============================================================================
+FILE    : 101726-12078-01.dmp (OS 15.26100, 12 logical CPUs)
+BUGCHECK: 0x1000007E (SYSTEM_THREAD_EXCEPTION_NOT_HANDLED_M)
+  Param1: 0xFFFFFFFFC0000005
+  Param2: 0xFFFFF80098405EF5 -> ntoskrnl.exe+0x205EF5
+  Param3: 0xFFFFF10AE8226FC8
+  Param4: 0xFFFFBB0199FA48D0
+CRASH RIP: 0xFFFFF80098405EF5 (ntoskrnl.exe+0x205EF5)
+  [!] HARDWARE SINGLE-BIT FLIP DETECTED IN CPU REGISTERS:
+      RDI: 0xFEFF808FD6286258 (Bit 56 flipped 1->0! Expected canonical kernel pointer: 0xFFFF808FD6286258)
+==============================================================================
+FILE    : 102226-10531-01.dmp (OS 15.26100, 12 logical CPUs)
+BUGCHECK: 0x0000003B (SYSTEM_SERVICE_EXCEPTION)
+  Param1: 0x00000000C0000005
+  Param2: 0xFFFFF803B8F884E8 -> ntoskrnl.exe+0x3884E8
+  Param3: 0xFFFFFA89973FE770
+  Param4: 0x0000000000000000
+CRASH RIP: 0xFFFFF803B8F884E8 (ntoskrnl.exe+0x3884E8)
+  [!] HARDWARE SINGLE-BIT FLIP DETECTED IN CPU REGISTERS:
+      RCX: 0xFEFFDF87873AF040 (Bit 56 flipped 1->0! Expected canonical kernel pointer: 0xFFFFDF87873AF040)
+      RDI: 0xFEFFDF87873AF0C0 (Bit 56 flipped 1->0! Expected canonical kernel pointer: 0xFFFFDF87873AF0C0)
+      R13: 0xFEFFDF87873AF040 (Bit 56 flipped 1->0! Expected canonical kernel pointer: 0xFFFFDF87873AF040)
+==============================================================================
+
+
+--- 2. LIVE FIFO SLIDING-WINDOW HUNTING LOG (`python -m badpage_hunter hunt`) ---
+
+[2026-10-22 14:40:44] === BadPageHunter Initialized ===
+[2026-10-22 14:40:44] Sliding Window: 3 batches x 2.0 GB = 6.0 GB max footprint (Soak: 3.0s)
+[2026-10-22 14:41:28] [!] Caught 1 corrupted page(s) in cycle 4! Resolving hardware PFNs...
+[2026-10-22 14:41:30]   -> VA 0x0000018E85F6B000 => PFN 0x2c308b (PhysAddr 0x0002C308B000, ~11.05 GB) [Pinned in RAM]
+[2026-10-22 14:42:37] [!] Caught 1 corrupted page(s) in cycle 11! Resolving hardware PFNs...
+[2026-10-22 14:42:38]   -> VA 0x0000018EC2B48000 => PFN 0x2c3d15 (PhysAddr 0x0002C3D15000, ~11.06 GB) [Pinned in RAM]
+[2026-10-22 14:51:47] [!] Caught 2 corrupted page(s) in cycle 64! Resolving hardware PFNs...
+[2026-10-22 14:51:49]   -> VA 0x0000018F303CE000 => PFN 0x2c2c25 (PhysAddr 0x0002C2C25000, ~11.04 GB) [Pinned in RAM]
+[2026-10-22 14:51:49]   -> VA 0x0000018ECDFDD000 => PFN 0x6c4425 (PhysAddr 0x0006C4425000, ~27.07 GB) [Pinned in RAM]
+
+
+--- 3. POST-REBOOT KERNEL VERIFICATION (`python -m badpage_hunter status`) ---
+
+System Physical RAM : 63.75 GB total | 57.24 GB available (10% load)
+
+Kernel Physical Memory Map (36 active descriptor ranges):
+  Range  0: PFN 0x0000001 .. 0x000009E (     157 pages,      0.61 MB)
+  Range  1: PFN 0x000009F .. 0x00000A0 (       1 pages,      0.00 MB)
+  Range  2: PFN 0x0000100 .. 0x00401BC (  262332 pages,   1024.73 MB)
+  Range  3: PFN 0x0043EFF .. 0x0043F00 (       1 pages,      0.00 MB)
+  Range  4: PFN 0x0100000 .. 0x02C008D ( 1835149 pages,   7168.55 MB)
+  Range  5: PFN 0x02C008E .. 0x02C04CB (    1085 pages,      4.24 MB)
+  Range  6: PFN 0x02C04CC .. 0x02C0555 (     137 pages,      0.54 MB)
+  Range  7: PFN 0x02C0556 .. 0x02C10AB (    2901 pages,     11.33 MB)
+  Range  8: PFN 0x02C10AC .. 0x02C1463 (     951 pages,      3.71 MB)
+  Range  9: PFN 0x02C1464 .. 0x02C1465 (       1 pages,      0.00 MB)
+  Range 10: PFN 0x02C1466 .. 0x02C2465 (    4095 pages,     16.00 MB)
+  Range 11: PFN 0x02C2466 .. 0x02C28ED (    1159 pages,      4.53 MB)
+  Range 12: PFN 0x02C28EE .. 0x02C29FD (     271 pages,      1.06 MB)
+  Range 13: PFN 0x02C29FE .. 0x02C2C23 (     549 pages,      2.14 MB)
+  Range 14: PFN 0x02C2C24 .. 0x02C2C25 (       1 pages,      0.00 MB)
+  Range 15: PFN 0x02C2C26 .. 0x02C2D33 (     269 pages,      1.05 MB)
+  Range 16: PFN 0x02C2D34 .. 0x02C2D35 (       1 pages,      0.00 MB)
+  Range 17: PFN 0x02C2D36 .. 0x02C2DBB (     133 pages,      0.52 MB)
+  Range 18: PFN 0x02C2DBC .. 0x02C2DBD (       1 pages,      0.00 MB)
+  Range 19: PFN 0x02C2DBE .. 0x02C308B (     717 pages,      2.80 MB)
+  Range 20: PFN 0x02C308C .. 0x02C3843 (    1975 pages,      7.71 MB)
+  Range 21: PFN 0x02C3844 .. 0x02C3D15 (    1233 pages,      4.82 MB)
+  Range 22: PFN 0x02C3D16 .. 0x02C3D98 (     130 pages,      0.51 MB)
+  Range 23: PFN 0x02C3D99 .. 0x02C3D9B (       2 pages,      0.01 MB)
+  Range 24: PFN 0x02C3D9C .. 0x02C3D9F (       3 pages,      0.01 MB)
+  Range 25: PFN 0x02C3DA0 .. 0x02C4045 (     677 pages,      2.64 MB)
+  Range 26: PFN 0x02C4046 .. 0x02C40C8 (     130 pages,      0.51 MB)
+  Range 27: PFN 0x02C40C9 .. 0x02C40CB (       2 pages,      0.01 MB)
+  Range 28: PFN 0x02C40CC .. 0x02C40CD (       1 pages,      0.00 MB)
+  Range 29: PFN 0x02C40CE .. 0x02C4153 (     133 pages,      0.52 MB)
+  Range 30: PFN 0x02C4156 .. 0x06C28CB ( 4188021 pages,  16359.46 MB)
+  Range 31: PFN 0x06C28CC .. 0x06C2953 (     135 pages,      0.53 MB)
+  Range 32: PFN 0x06C2954 .. 0x06C4425 (    6865 pages,     26.82 MB)
+  Range 33: PFN 0x06C4426 .. 0x06C45B8 (     402 pages,      1.57 MB)
+  Range 34: PFN 0x06C45B9 .. 0x06C45BB (       2 pages,      0.01 MB)
+  Range 35: PFN 0x06C45BC .. 0x10AFC00 (10401348 pages,  40630.27 MB)
+
+Windows BCD {badmemory} Isolated PFNs (49 pages = 196 KB):
+  0x2c008b  0x2c008d  0x2c04cb  0x2c04cd  0x2c0553  0x2c0555
+  0x2c10ab  0x2c10ad  0x2c1463  0x2c1465  0x2c2463  0x2c2465
+  0x2c28eb  0x2c28ed  0x2c29fb  0x2c29fd  0x2c2c23  0x2c2c25
+  0x2c2d33  0x2c2d35  0x2c2dbb  0x2c2dbd  0x2c308b  0x2c308d
+  0x2c3843  0x2c3845  0x2c3d13  0x2c3d15  0x2c3d98  0x2c3d9b
+  0x2c3d9d  0x2c3d9f  0x2c4043  0x2c4045  0x2c40c8  0x2c40cb
+  0x2c40cd  0x2c4153  0x2c4154  0x2c4155  0x6c28cb  0x6c28cd
+  0x6c2953  0x6c2955  0x6c4423  0x6c4425  0x6c45b8  0x6c45bb
+  0x6c45bd
+
+Kernel _MMPFN Verification (33/49 active kernel-excised, 16/49 staged for next reboot):
+  PFN 0x2C008B (PhysAddr 0x0002C008B000): STAGED_PENDING_REBOOT (NTSTATUS=0x00000000)
+  PFN 0x2C008D (PhysAddr 0x0002C008D000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C04CB (PhysAddr 0x0002C04CB000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C04CD (PhysAddr 0x0002C04CD000): STAGED_PENDING_REBOOT (NTSTATUS=0x00000000)
+  PFN 0x2C0553 (PhysAddr 0x0002C0553000): STAGED_PENDING_REBOOT (NTSTATUS=0x00000000)
+  PFN 0x2C0555 (PhysAddr 0x0002C0555000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C10AB (PhysAddr 0x0002C10AB000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C10AD (PhysAddr 0x0002C10AD000): STAGED_PENDING_REBOOT (NTSTATUS=0x00000000)
+  PFN 0x2C1463 (PhysAddr 0x0002C1463000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C1465 (PhysAddr 0x0002C1465000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  PFN 0x2C2463 (PhysAddr 0x0002C2463000): STAGED_PENDING_REBOOT (NTSTATUS=0x00000000)
+  PFN 0x2C2465 (PhysAddr 0x0002C2465000): EXCISED_BY_BOOTLOADER (NTSTATUS=0xC00000F0)
+  ... (37 more isolated PFNs verified)
