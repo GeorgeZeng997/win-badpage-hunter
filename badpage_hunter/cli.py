@@ -120,10 +120,10 @@ def main() -> int:
 
     p_hunt = sub.add_parser("hunt", help="Run the low-memory FIFO sliding-window DRAM retention bit-flip hunter.")
     p_hunt.add_argument("--window-batches", type=int, default=3, help="Number of active batches in FIFO sliding window (default: 3)")
-    p_hunt.add_argument("--batch-gb", type=int, default=6, help="Size per batch in GB (default: 6)")
+    p_hunt.add_argument("--batch-gb", type=float, default=6.0, help="Size per batch in GB (default: 6.0)")
     p_hunt.add_argument("--block-mb", type=int, default=256, help="Allocation block size in MB (default: 256)")
     p_hunt.add_argument("--min-avail-gb", type=float, default=16.0, help="Safety floor for free system RAM in GB (default: 16.0)")
-    p_hunt.add_argument("--soak", type=int, default=15, help="Retention soak duration per cycle in seconds (default: 15)")
+    p_hunt.add_argument("--soak", type=float, default=15.0, help="Retention soak duration per cycle in seconds (default: 15.0)")
     p_hunt.add_argument("--max-cycles", type=int, default=None, help="Stop after N cycles (default: run continuously)")
     p_hunt.add_argument("--no-row-twins", action="store_true", help="Do not automatically add paired DRAM row (+3/+5) twin pages")
     p_hunt.add_argument("--log-file", default="bad_page_hunter.log", help="Log file path")

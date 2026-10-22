@@ -76,7 +76,7 @@ class BadPageHunter:
 
         self.block_sz = block_mb * 1024 * 1024
         self.qwords_per_block = self.block_sz // 8
-        self.blocks_per_batch = (batch_gb * 1024) // block_mb
+        self.blocks_per_batch = max(1, int((batch_gb * 1024) // block_mb))
 
         self.patterns = [
             np.uint64(0xFFFFFFFFFFFFFFFF),
