@@ -1,0 +1,114 @@
+name: Build & Package Windows GUI Application
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    name: Build Standalone Windows x64 App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: "x64"
+          cache: "pip"
+
+      - name: Install Build Dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e .
+
+      - name: Smoke Test CLI & Modules
+        shell: pwsh
+        run: |
+          python -m badpage_hunter --help
+          python -m badpage_hunter status
+
+      - name: Package Standalone GUI Executable (PyInstaller)
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --uac-admin `
+            --name "win-badpage-hunter" `
+            --icon "assets/icon.ico" `
+            --add-data "assets/icon.ico;assets" `
+            --exclude-module matplotlib `
+            --exclude-module scipy `
+            --exclude-module pandas `
+            --exclude-module PIL `
+            --exclude-module PyQt5 `
+            run_app.py
+
+      - name: Create Release Archive & SHA256 Checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/bundle | Out-Null
+          Copy-Item dist/win-badpage-hunter.exe dist/bundle/
+          Copy-Item README.md dist/bundle/
+          Copy-Item LICENSE dist/bundle/
+          Compress-Archive -Path dist/bundle/* -DestinationPath dist/win-badpage-hunter-win64.zip -Force
+
+          $exeHash = (Get-FileHash dist/win-badpage-hunter.exe -Algorithm SHA256).Hash.ToLower()
+          $zipHash = (Get-FileHash dist/win-badpage-hunter-win64.zip -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$exeHash  win-badpage-hunter.exe",
+            "$zipHash  win-badpage-hunter-win64.zip"
+          ) | Set-Content -Path dist/SHA256SUMS.txt -Encoding UTF8
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-badpage-hunter-win64
+          path: |
+            dist/win-badpage-hunter.exe
+            dist/win-badpage-hunter-win64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Determine Release Tag
+        id: rel_tag
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/*") {
+            $tag = $env:GITHUB_REF_NAME
+          } else {
+            $ver = (python -c "import badpage_hunter; print(badpage_hunter.__version__)").Trim()
+            $tag = "v$ver"
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Target Release Tag: $tag"
+
+      - name: Publish to GitHub Releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.rel_tag.outputs.tag }}
+          name: "Win-BadPage-Hunter ${{ steps.rel_tag.outputs.tag }} (Windows x64 Desktop GUI + CLI)"
+          generate_release_notes: true
+          files: |
+            dist/win-badpage-hunter.exe
+            dist/win-badpage-hunter-win64.zip
+            dist/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,5 +1,16 @@
+import ctypes
 import subprocess
 from typing import Iterable, List, Set, Tuple
+
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
+def is_admin() -> bool:
+    """Return True if the current process is running with Administrator privileges."""
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
 
 def get_existing_bad_pfns() -> Set[int]:
@@ -10,6 +21,7 @@ def get_existing_bad_pfns() -> Set[int]:
         text=True,
         encoding="utf-8",
         errors="ignore",
+        creationflags=CREATE_NO_WINDOW,
     )
     pfns: Set[int] = set()
     in_list = False
@@ -64,7 +76,64 @@ def update_bcd_badmemory(new_pfns: Iterable[int], include_row_twins: bool = True
 
     hex_list: List[str] = [f"0x{x:x}" for x in sorted(pfns)]
     cmd = ["bcdedit", "/set", "{badmemory}", "badmemorylist"] + hex_list
-    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
-    subprocess.run(["bcdedit", "/set", "{badmemory}", "badmemoryaccess", "no"], capture_output=True)
-    subprocess.run(["bcdedit", "/set", "{globalsettings}", "badmemoryaccess", "no"], capture_output=True)
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+        creationflags=CREATE_NO_WINDOW,
+    )
+    subprocess.run(
+        ["bcdedit", "/set", "{badmemory}", "badmemoryaccess", "no"],
+        capture_output=True,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    subprocess.run(
+        ["bcdedit", "/set", "{globalsettings}", "badmemoryaccess", "no"],
+        capture_output=True,
+        creationflags=CREATE_NO_WINDOW,
+    )
     return pfns, (res.stdout or res.stderr).strip()
+
+
+def remove_bcd_badmemory_pfns(pfns_to_remove: Iterable[int]) -> Tuple[Set[int], str]:
+    """
+    Remove specific PFNs from Windows BCD {badmemory} badmemorylist.
+    Returns (remaining_pfns, bcdedit_output).
+    """
+    existing = get_existing_bad_pfns()
+    remaining = existing - set(pfns_to_remove)
+    if not remaining:
+        ok, msg = clear_bcd_badmemory()
+        return set(), msg
+
+    hex_list: List[str] = [f"0x{x:x}" for x in sorted(remaining)]
+    cmd = ["bcdedit", "/set", "{badmemory}", "badmemorylist"] + hex_list
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+        creationflags=CREATE_NO_WINDOW,
+    )
+    return remaining, (res.stdout or res.stderr).strip()
+
+
+def clear_bcd_badmemory() -> Tuple[bool, str]:
+    """
+    Delete the badmemorylist value from Windows BCD {badmemory}.
+    Returns (success, bcdedit_output).
+    """
+    res = subprocess.run(
+        ["bcdedit", "/deletevalue", "{badmemory}", "badmemorylist"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+        creationflags=CREATE_NO_WINDOW,
+    )
+    out = (res.stdout or res.stderr).strip()
+    return res.returncode == 0, out
+

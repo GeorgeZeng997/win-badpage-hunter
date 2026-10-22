@@ -170,24 +170,43 @@ By sacrificing just **196 KB (`0.00029%`)** of the 64 GB RAM, the laptop achieve
 
 ## Installation & Quick Start
 
-### Requirements
+### Option A: Download Standalone Windows GUI Application (No Python Required)
+Pre-built standalone `win-badpage-hunter.exe` binaries (with embedded UAC Administrator manifest and dark-mode desktop GUI) are automatically built and published via GitHub Actions on the [**Releases**](https://github.com/GeorgeZeng997/win-badpage-hunter/releases) page.
+
+1. Download `win-badpage-hunter.exe` (or `win-badpage-hunter-win64.zip`) from [**GitHub Releases**](https://github.com/GeorgeZeng997/win-badpage-hunter/releases).
+2. Double-click `win-badpage-hunter.exe` and accept the UAC Administrator prompt to launch the graphical interface.
+
+### Option B: Run from Source (Python 3.8+)
 - **OS**: Windows 10 or Windows 11 (x64)
-- **Python**: Python 3.8+ (64-bit) with **zero third-party dependencies**
+- **Python**: Python 3.8+ (64-bit)
 - **Privileges**: Run from an **Administrator** PowerShell or Command Prompt (required for `SeProfileSingleProcessPrivilege`, `SeLockMemoryPrivilege`, and `bcdedit {badmemory}`).
 
 ```powershell
 git clone https://github.com/GeorgeZeng997/win-badpage-hunter.git
 cd win-badpage-hunter
-```
-
-*(Optional)* Install as a system-wide CLI command `badpage-hunter`:
-```powershell
+pip install -r requirements.txt
 pip install -e .
 ```
 
 ---
 
-## CLI Usage
+## Desktop GUI & CLI Usage
+
+### Launch Desktop GUI (Bilingual 中文 / English)
+Running `badpage-hunter` with no arguments (or `python -m badpage_hunter gui`) opens the dark-themed hardware diagnostics GUI featuring 4 integrated workspaces:
+1. **Kernel & Physical Memory Status (`📊 内核与物理内存概览`)**: Live RAM telemetry, `MmPhysicalMemoryBlock` descriptor range viewer, and `_MMPFN` bootloader excision verification.
+2. **Live DRAM Bit-Flip Hunter (`🎯 实时坏页猎手`)**: One-click auto-tuning for your PC's RAM size, real-time charge-retention soak progress bar, live telemetry counters, and color-coded event console.
+3. **BSOD Minidump Analyzer (`🔍 蓝屏转储取证`)**: Interactive `PAGEDU64` crash dump inspector highlighting non-canonical single-bit register flips (`1 -> 0` in bits 48..63) and call stack symbols.
+4. **BCD `{badmemory}` Manager (`🛡️ BCD 坏页隔离管理`)**: Add/remove PFNs, preview `+3 / +5` DRAM row-twin couplings (`PFN ^ 6`), export/import PFN backup lists (`.json`/`.txt`), or reset `{badmemory}`.
+
+```powershell
+# Launch Desktop GUI
+python -m badpage_hunter
+# Or specify initial language (zh / en)
+python -m badpage_hunter gui --lang en
+```
+
+### CLI Subcommands
 
 ### 1. Analyze BSOD Minidumps for Hardware Bit-Flips
 Scan `C:\Windows\Minidump` to determine whether your BSODs are caused by single-bit DRAM decay or faulty drivers:
@@ -239,16 +258,22 @@ python -m badpage_hunter isolate 0x2c008d 0x6c28cb
 
 ```text
 win-badpage-hunter/
+├── .github/workflows/
+│   └── build-release.yml  # GitHub Actions CI/CD: auto-builds .exe & publishes GitHub Releases
+├── assets/
+│   └── icon.ico           # Multi-resolution Windows application icon
 ├── badpage_hunter/
 │   ├── __init__.py        # Package metadata
 │   ├── __main__.py        # python -m badpage_hunter entrypoint
-│   ├── cli.py             # CLI subcommands (analyze-dumps, status, hunt, isolate)
+│   ├── cli.py             # CLI + GUI dispatcher (gui, analyze-dumps, status, hunt, isolate)
+│   ├── gui.py             # Dark-mode High-DPI Desktop GUI (Tkinter/ttk + DWM Dark Titlebar)
 │   ├── dmp_analyzer.py    # Pure-Python PAGEDU64 BSOD minidump parser & bit-flip detector
 │   ├── pfn_resolver.py    # NtQuerySystemInformation(79) VA->PFN & _MMPFN verifier (Win10/11 24H2)
 │   ├── bcd_manager.py     # Windows BCD {badmemory} manager & DRAM +3/+5 row-twin inference
 │   └── hunter.py          # Low-memory FIFO sliding-window retention hunter & VirtualLock pinner
 ├── examples/
 │   └── sample_case_study.txt  # Real-world 64GB DDR4-3200 rescue telemetry
+├── run_app.py             # Standalone PyInstaller executable entrypoint
 ├── LICENSE                # MIT License
 ├── pyproject.toml         # Python packaging configuration
 └── README.md              # Documentation

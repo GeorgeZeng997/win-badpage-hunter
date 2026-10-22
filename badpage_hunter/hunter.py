@@ -2,8 +2,10 @@ import ctypes
 from ctypes import wintypes
 import datetime
 import os
+import sys
+import threading
 import time
-from typing import List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import numpy as np
 
 from .bcd_manager import get_existing_bad_pfns, update_bcd_badmemory
@@ -48,6 +50,44 @@ def get_memory_status() -> Tuple[float, float, int]:
     )
 
 
+def recommend_hunter_params() -> Dict[str, Any]:
+    """Calculate safe, adaptive FIFO sliding-window parameters for the current system's RAM."""
+    total_gb, avail_gb, _ = get_memory_status()
+    if total_gb >= 48.0:
+        min_avail = max(12.0, round(total_gb * 0.25, 1))
+        batch_gb = 4.0
+        window_batches = 3
+        block_mb = 256
+    elif total_gb >= 24.0:
+        min_avail = max(6.0, round(total_gb * 0.25, 1))
+        batch_gb = 2.0
+        window_batches = 3
+        block_mb = 128
+    elif total_gb >= 12.0:
+        min_avail = 4.0
+        batch_gb = 1.0
+        window_batches = 3
+        block_mb = 64
+    else:
+        min_avail = max(2.0, round(avail_gb * 0.4, 1))
+        batch_gb = 0.5
+        window_batches = 2
+        block_mb = 32
+
+    # Ensure min_avail leaves room for at least 1 batch if currently low on free RAM
+    if avail_gb - min_avail < batch_gb:
+        min_avail = max(2.0, round(avail_gb * 0.5, 1))
+        batch_gb = max(0.5, round((avail_gb - min_avail) / 2.0, 1))
+
+    return {
+        "window_batches": window_batches,
+        "batch_gb": batch_gb,
+        "block_mb": block_mb,
+        "min_avail_gb": min_avail,
+        "soak_seconds": 10.0,
+    }
+
+
 class BadPageHunter:
     """
     Low-memory FIFO sliding-window DRAM charge-retention bit-flip hunter.
@@ -59,24 +99,30 @@ class BadPageHunter:
     def __init__(
         self,
         window_batches: int = 3,
-        batch_gb: int = 6,
+        batch_gb: float = 6.0,
         block_mb: int = 256,
-        min_avail_gb: float = 36.0,
-        soak_seconds: int = 15,
+        min_avail_gb: float = 16.0,
+        soak_seconds: float = 15.0,
         include_row_twins: bool = True,
         log_file: Optional[str] = "bad_page_hunter.log",
+        on_log: Optional[Callable[[str], None]] = None,
+        on_stats: Optional[Callable[[Dict[str, Any]], None]] = None,
+        stop_event: Optional[threading.Event] = None,
     ):
         self.window_batches = window_batches
-        self.batch_gb = batch_gb
-        self.block_mb = block_mb
-        self.min_avail_gb = min_avail_gb
-        self.soak_seconds = soak_seconds
+        self.batch_gb = float(batch_gb)
+        self.block_mb = int(block_mb)
+        self.min_avail_gb = float(min_avail_gb)
+        self.soak_seconds = float(soak_seconds)
         self.include_row_twins = include_row_twins
         self.log_file = log_file
+        self.on_log = on_log
+        self.on_stats = on_stats
+        self._stop_event = stop_event or threading.Event()
 
-        self.block_sz = block_mb * 1024 * 1024
+        self.block_sz = self.block_mb * 1024 * 1024
         self.qwords_per_block = self.block_sz // 8
-        self.blocks_per_batch = max(1, int((batch_gb * 1024) // block_mb))
+        self.blocks_per_batch = max(1, int((self.batch_gb * 1024) // self.block_mb))
 
         self.patterns = [
             np.uint64(0xFFFFFFFFFFFFFFFF),
@@ -87,14 +133,49 @@ class BadPageHunter:
         enable_privileges()
         self.bad_pfns: Set[int] = get_existing_bad_pfns()
         self.pinned_blocks: List[int] = []
+        self.total_flips_caught: int = 0
+        self.newly_isolated_pfns: Set[int] = set()
+
+    def stop(self) -> None:
+        """Signal the hunter loop to stop immediately and clean up allocated test buffers."""
+        self._stop_event.set()
+
+    def _emit_stats(self, cycle: int, active_batches: int, active_gb: float, phase: str, soak_progress: float = 0.0) -> None:
+        if self.on_stats:
+            try:
+                self.on_stats({
+                    "cycle": cycle,
+                    "active_batches": active_batches,
+                    "active_gb": active_gb,
+                    "total_flips": self.total_flips_caught,
+                    "bad_pfns_count": len(self.bad_pfns),
+                    "newly_isolated_count": len(self.newly_isolated_pfns),
+                    "pinned_count": len(self.pinned_blocks),
+                    "phase": phase,
+                    "soak_progress": soak_progress,
+                })
+            except Exception:
+                pass
 
     def log(self, msg: str) -> None:
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{ts}] {msg}"
-        print(line, flush=True)
+        if sys.stdout is not None:
+            try:
+                print(line, flush=True)
+            except Exception:
+                pass
         if self.log_file:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            try:
+                with open(self.log_file, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except Exception:
+                pass
+        if self.on_log:
+            try:
+                self.on_log(line)
+            except Exception:
+                pass
 
     def inspect_and_free_block(self, base_va: int, expected_val: np.uint64, label: str) -> int:
         arr = np.ctypeslib.as_array((ctypes.c_uint64 * self.qwords_per_block).from_address(base_va))
@@ -104,6 +185,7 @@ class BadPageHunter:
             kernel32.VirtualFree(base_va, 0, MEM_RELEASE)
             return 0
 
+        self.total_flips_caught += flips
         bad_page_vas: Set[int] = set()
         flip_details = []
         for m_idx in mismatch_indices[:64]:
@@ -126,6 +208,7 @@ class BadPageHunter:
             self.log(f"      VA      : 0x{bad_va:016X} -> Physical PFN: {pfn_str}")
             if pfn:
                 newly_caught.append(pfn)
+                self.newly_isolated_pfns.add(pfn)
 
         if newly_caught:
             updated_set, bcd_msg = update_bcd_badmemory(newly_caught, include_row_twins=self.include_row_twins)
@@ -154,14 +237,17 @@ class BadPageHunter:
             f"ExistingBadPFNs={len(self.bad_pfns)}) ==="
         )
         try:
-            while max_cycles is None or cycle < max_cycles:
+            while not self._stop_event.is_set() and (max_cycles is None or cycle < max_cycles):
                 cycle += 1
                 _, avail_gb, load = get_memory_status()
 
-                while len(fifo_queue) >= self.window_batches or (
-                    len(fifo_queue) > 0 and avail_gb - self.batch_gb < self.min_avail_gb
+                while not self._stop_event.is_set() and (
+                    len(fifo_queue) >= self.window_batches
+                    or (len(fifo_queue) > 0 and avail_gb - self.batch_gb < self.min_avail_gb)
                 ):
                     old_cycle, old_blocks = fifo_queue.pop(0)
+                    active_blocks = sum(len(b) for _, b in fifo_queue)
+                    self._emit_stats(cycle, len(fifo_queue), active_blocks * self.block_mb / 1024.0, f"Verifying Batch c{old_cycle}")
                     flips = 0
                     for blk_i, (base_va, pat) in enumerate(old_blocks):
                         flips += self.inspect_and_free_block(base_va, pat, f"c{old_cycle}.{blk_i}")
@@ -172,9 +258,14 @@ class BadPageHunter:
                         f"AvailPhys={avail_gb:.2f}GB (Load={load}%)"
                     )
 
+                if self._stop_event.is_set():
+                    break
+
                 pat = self.patterns[cycle % len(self.patterns)]
                 new_blocks: List[Tuple[int, np.uint64]] = []
-                for _ in range(self.blocks_per_batch):
+                for blk_idx in range(self.blocks_per_batch):
+                    if self._stop_event.is_set():
+                        break
                     _, avail_now, _ = get_memory_status()
                     if avail_now < self.min_avail_gb:
                         break
@@ -185,7 +276,14 @@ class BadPageHunter:
                     arr.fill(np.uint64(~pat))
                     arr.fill(pat)
                     new_blocks.append((base_va, pat))
-                    time.sleep(0.04)
+                    active_blocks = sum(len(b) for _, b in fifo_queue) + len(new_blocks)
+                    self._emit_stats(
+                        cycle,
+                        len(fifo_queue) + 1,
+                        active_blocks * self.block_mb / 1024.0,
+                        f"Allocating Batch c{cycle} ({blk_idx + 1}/{self.blocks_per_batch})",
+                    )
+                    time.sleep(0.03)
 
                 if new_blocks:
                     fifo_queue.append((cycle, new_blocks))
@@ -196,11 +294,31 @@ class BadPageHunter:
                         f"ActiveWindow={len(fifo_queue)} batches | AvailPhys={avail_after:.2f}GB (Load={load_after}%)"
                     )
 
-                time.sleep(self.soak_seconds)
+                active_blocks = sum(len(b) for _, b in fifo_queue)
+                active_gb = active_blocks * self.block_mb / 1024.0
+                soak_start = time.monotonic()
+                while not self._stop_event.is_set():
+                    elapsed = time.monotonic() - soak_start
+                    if elapsed >= self.soak_seconds:
+                        break
+                    pct = min(100.0, (elapsed / max(0.1, self.soak_seconds)) * 100.0)
+                    self._emit_stats(
+                        cycle,
+                        len(fifo_queue),
+                        active_gb,
+                        f"Charge-Retention Soak ({elapsed:.1f}s / {self.soak_seconds:.1f}s)",
+                        soak_progress=pct,
+                    )
+                    time.sleep(0.1)
         except KeyboardInterrupt:
             self.log("Interrupted by user. Cleaning up healthy test buffers...")
         finally:
+            if self._stop_event.is_set():
+                self.log("Stopping BadPageHunter and releasing healthy test buffers...")
             for _, blocks in fifo_queue:
                 for base_va, _ in blocks:
                     kernel32.VirtualFree(base_va, 0, MEM_RELEASE)
+            self._emit_stats(cycle, 0, 0.0, "Stopped", soak_progress=0.0)
+            self.log("=== BadPageHunter stopped. All healthy test buffers released. ===")
         return self.bad_pfns
+

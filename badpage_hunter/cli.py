@@ -1,10 +1,28 @@
 import argparse
+import ctypes
 import sys
 
 from .bcd_manager import get_existing_bad_pfns, update_bcd_badmemory
 from .dmp_analyzer import analyze_minidump_directory
 from .hunter import BadPageHunter, get_memory_status
 from .pfn_resolver import get_kernel_physical_memory_ranges, query_pfn_database_status
+
+
+def _ensure_console_attached() -> None:
+    """When frozen with --windowed (no console), attach to parent terminal if invoked with CLI args."""
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        try:
+            if ctypes.windll.kernel32.AttachConsole(-1):
+                sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+                sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        except Exception:
+            pass
+
+
+def cmd_gui(args: argparse.Namespace) -> int:
+    from .gui import launch_gui
+
+    return launch_gui(lang=getattr(args, "lang", "zh"))
 
 
 def cmd_analyze_dumps(args: argparse.Namespace) -> int:
@@ -105,11 +123,22 @@ def cmd_isolate(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    if len(sys.argv) == 1:
+        from .gui import launch_gui
+
+        return launch_gui()
+
+    _ensure_console_attached()
+
     parser = argparse.ArgumentParser(
         prog="badpage-hunter",
         description="Hunt down leaky DRAM bit-flip pages in user-mode and surgically isolate their physical PFNs via Windows BCD.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_gui = sub.add_parser("gui", help="Launch the graphical user interface (default when run with no arguments).")
+    p_gui.add_argument("--lang", choices=["zh", "en"], default="zh", help="Initial UI language (default: zh)")
+    p_gui.set_defaults(func=cmd_gui)
 
     p_dmp = sub.add_parser("analyze-dumps", help="Parse Windows PAGEDU64 Minidumps and detect hardware single-bit flips.")
     p_dmp.add_argument("--dir", default=r"C:\Windows\Minidump", help="Path to Minidump directory (default: C:\\Windows\\Minidump)")
@@ -140,3 +169,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
