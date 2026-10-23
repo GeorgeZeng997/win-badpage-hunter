@@ -1,7 +1,8 @@
 import ctypes
-from ctypes import wintypes
 import datetime
+import mmap
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -9,14 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import numpy as np
 
 from .bcd_manager import get_existing_bad_pfns, update_bcd_badmemory
-from .pfn_resolver import enable_privileges, kernel32, resolve_vas_to_pfns
-
-kernel32.VirtualAlloc.restype = ctypes.c_void_p
-kernel32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD, wintypes.DWORD]
-kernel32.VirtualFree.restype = wintypes.BOOL
-kernel32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD]
-kernel32.VirtualLock.restype = wintypes.BOOL
-kernel32.VirtualLock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+from .pfn_resolver import IS_LINUX, IS_WINDOWS, enable_privileges, kernel32, resolve_vas_to_pfns
 
 MEM_COMMIT = 0x1000
 MEM_RESERVE = 0x2000
@@ -24,30 +18,81 @@ MEM_DECOMMIT = 0x4000
 MEM_RELEASE = 0x8000
 PAGE_READWRITE = 0x04
 
+if IS_WINDOWS and kernel32 is not None:
+    from ctypes import wintypes
 
-class MEMORYSTATUSEX(ctypes.Structure):
-    _fields_ = [
-        ("dwLength", wintypes.DWORD),
-        ("dwMemoryLoad", wintypes.DWORD),
-        ("ullTotalPhys", ctypes.c_uint64),
-        ("ullAvailPhys", ctypes.c_uint64),
-        ("ullTotalPageFile", ctypes.c_uint64),
-        ("ullAvailPageFile", ctypes.c_uint64),
-        ("ullTotalVirtual", ctypes.c_uint64),
-        ("ullAvailVirtual", ctypes.c_uint64),
-        ("ullAvailExtendedVirtual", ctypes.c_uint64),
-    ]
+    kernel32.VirtualAlloc.restype = ctypes.c_void_p
+    kernel32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD, wintypes.DWORD]
+    kernel32.VirtualFree.restype = wintypes.BOOL
+    kernel32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD]
+    kernel32.VirtualLock.restype = wintypes.BOOL
+    kernel32.VirtualLock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", wintypes.DWORD),
+            ("dwMemoryLoad", wintypes.DWORD),
+            ("ullTotalPhys", ctypes.c_uint64),
+            ("ullAvailPhys", ctypes.c_uint64),
+            ("ullTotalPageFile", ctypes.c_uint64),
+            ("ullAvailPageFile", ctypes.c_uint64),
+            ("ullTotalVirtual", ctypes.c_uint64),
+            ("ullAvailVirtual", ctypes.c_uint64),
+            ("ullAvailExtendedVirtual", ctypes.c_uint64),
+        ]
+else:
+    try:
+        _libc = ctypes.CDLL(None)
+        _libc.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        _libc.mlock.restype = ctypes.c_int
+    except Exception:
+        _libc = None
 
 
 def get_memory_status() -> Tuple[float, float, int]:
-    """Return (total_gb, avail_gb, memory_load_percent)."""
-    ms = MEMORYSTATUSEX(dwLength=ctypes.sizeof(MEMORYSTATUSEX))
-    kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
-    return (
-        ms.ullTotalPhys / (1024 ** 3),
-        ms.ullAvailPhys / (1024 ** 3),
-        int(ms.dwMemoryLoad),
-    )
+    """Return (total_gb, avail_gb, memory_load_percent) across Windows, Linux, and macOS."""
+    if IS_WINDOWS and kernel32 is not None:
+        ms = MEMORYSTATUSEX(dwLength=ctypes.sizeof(MEMORYSTATUSEX))
+        kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
+        return (
+            ms.ullTotalPhys / (1024 ** 3),
+            ms.ullAvailPhys / (1024 ** 3),
+            int(ms.dwMemoryLoad),
+        )
+
+    if IS_LINUX and os.path.exists("/proc/meminfo"):
+        total_kb = 0
+        avail_kb = 0
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total_kb = int(line.split()[1])
+                elif line.startswith("MemAvailable:"):
+                    avail_kb = int(line.split()[1])
+        if total_kb > 0:
+            total_gb = total_kb / (1024 ** 2)
+            avail_gb = avail_kb / (1024 ** 2)
+            load = int(round((1.0 - avail_gb / total_gb) * 100))
+            return total_gb, avail_gb, max(0, min(100, load))
+
+    # macOS / POSIX fallback
+    try:
+        total_bytes = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        total_gb = total_bytes / (1024 ** 3)
+        avail_gb = total_gb * 0.5
+        if sys.platform == "darwin":
+            out = subprocess.check_output(["vm_stat"], text=True, encoding="utf-8", errors="ignore")
+            free_pages = 0
+            for line in out.splitlines():
+                if any(k in line for k in ("Pages free:", "Pages inactive:", "Pages speculative:")):
+                    val_str = line.split(":")[1].strip().rstrip(".")
+                    free_pages += int(val_str)
+            page_sz = os.sysconf("SC_PAGE_SIZE")
+            avail_gb = (free_pages * page_sz) / (1024 ** 3)
+        load = int(round((1.0 - avail_gb / max(0.1, total_gb)) * 100))
+        return total_gb, avail_gb, max(0, min(100, load))
+    except Exception:
+        return 16.0, 8.0, 50
 
 
 def recommend_hunter_params() -> Dict[str, Any]:
@@ -74,7 +119,6 @@ def recommend_hunter_params() -> Dict[str, Any]:
         window_batches = 2
         block_mb = 32
 
-    # Ensure min_avail leaves room for at least 1 batch if currently low on free RAM
     if avail_gb - min_avail < batch_gb:
         min_avail = max(2.0, round(avail_gb * 0.5, 1))
         batch_gb = max(0.5, round((avail_gb - min_avail) / 2.0, 1))
@@ -92,8 +136,8 @@ class BadPageHunter:
     """
     Low-memory FIFO sliding-window DRAM charge-retention bit-flip hunter.
     Cycles through free physical pages without starving the OS, pins any page exhibiting
-    bit-flips via VirtualLock, translates its VA to a hardware PFN via Superfetch, and
-    records the faulty PFN (+ DRAM row-twin siblings) into Windows BCD {badmemory}.
+    bit-flips via VirtualLock/mlock, translates its VA to a hardware PFN via Superfetch or
+    /proc/self/pagemap, and records the faulty PFN (+ DRAM row-twin siblings).
     """
 
     def __init__(
@@ -132,13 +176,46 @@ class BadPageHunter:
         ]
         enable_privileges()
         self.bad_pfns: Set[int] = get_existing_bad_pfns()
-        self.pinned_blocks: List[int] = []
+        self.pinned_blocks: List[Any] = []
+        self._posix_mmaps: Dict[int, mmap.mmap] = {}
         self.total_flips_caught: int = 0
         self.newly_isolated_pfns: Set[int] = set()
 
     def stop(self) -> None:
         """Signal the hunter loop to stop immediately and clean up allocated test buffers."""
         self._stop_event.set()
+
+    def _alloc_block(self) -> Optional[int]:
+        if IS_WINDOWS and kernel32 is not None:
+            base_va = kernel32.VirtualAlloc(None, self.block_sz, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+            return int(base_va) if base_va else None
+        try:
+            mm_obj = mmap.mmap(-1, self.block_sz)
+            base_va = ctypes.addressof(ctypes.c_char.from_buffer(mm_obj))
+            self._posix_mmaps[base_va] = mm_obj
+            return base_va
+        except Exception:
+            return None
+
+    def _free_block(self, base_va: int) -> None:
+        if IS_WINDOWS and kernel32 is not None:
+            kernel32.VirtualFree(base_va, 0, MEM_RELEASE)
+            return
+        mm_obj = self._posix_mmaps.pop(base_va, None)
+        if mm_obj is not None:
+            try:
+                mm_obj.close()
+            except Exception:
+                pass
+
+    def _lock_page(self, page_va: int) -> None:
+        if IS_WINDOWS and kernel32 is not None:
+            kernel32.VirtualLock(page_va, 4096)
+        elif _libc is not None:
+            try:
+                _libc.mlock(ctypes.c_void_p(page_va), 4096)
+            except Exception:
+                pass
 
     def _emit_stats(self, cycle: int, active_batches: int, active_gb: float, phase: str, soak_progress: float = 0.0) -> None:
         if self.on_stats:
@@ -182,7 +259,7 @@ class BadPageHunter:
         mismatch_indices = np.flatnonzero(arr != expected_val)
         flips = len(mismatch_indices)
         if flips == 0:
-            kernel32.VirtualFree(base_va, 0, MEM_RELEASE)
+            self._free_block(base_va)
             return 0
 
         self.total_flips_caught += flips
@@ -193,7 +270,7 @@ class BadPageHunter:
             diff = actual_val ^ int(expected_val)
             bad_va = base_va + int(m_idx) * 8
             page_va = bad_va & ~0xFFF
-            kernel32.VirtualLock(page_va, 4096)
+            self._lock_page(page_va)
             bad_page_vas.add(page_va)
             flip_details.append((int(m_idx) * 8, actual_val, diff, bad_va, page_va))
 
@@ -218,12 +295,13 @@ class BadPageHunter:
                 f"(total isolated PFNs: {len(self.bad_pfns)}) | {bcd_msg}"
             )
 
-        min_bad_page = min(bad_page_vas)
-        max_bad_page = max(bad_page_vas) + 4096
-        if min_bad_page > base_va:
-            kernel32.VirtualFree(base_va, min_bad_page - base_va, MEM_DECOMMIT)
-        if max_bad_page < base_va + self.block_sz:
-            kernel32.VirtualFree(max_bad_page, (base_va + self.block_sz) - max_bad_page, MEM_DECOMMIT)
+        if IS_WINDOWS and kernel32 is not None:
+            min_bad_page = min(bad_page_vas)
+            max_bad_page = max(bad_page_vas) + 4096
+            if min_bad_page > base_va:
+                kernel32.VirtualFree(base_va, min_bad_page - base_va, MEM_DECOMMIT)
+            if max_bad_page < base_va + self.block_sz:
+                kernel32.VirtualFree(max_bad_page, (base_va + self.block_sz) - max_bad_page, MEM_DECOMMIT)
         self.pinned_blocks.append(base_va)
         self.log(f"  [PINNED] Locked bad 4KB page(s) in RAM and decommitted healthy pages of {label}.")
         return flips
@@ -269,7 +347,7 @@ class BadPageHunter:
                     _, avail_now, _ = get_memory_status()
                     if avail_now < self.min_avail_gb:
                         break
-                    base_va = kernel32.VirtualAlloc(None, self.block_sz, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+                    base_va = self._alloc_block()
                     if not base_va:
                         break
                     arr = np.ctypeslib.as_array((ctypes.c_uint64 * self.qwords_per_block).from_address(base_va))
@@ -317,8 +395,7 @@ class BadPageHunter:
                 self.log("Stopping BadPageHunter and releasing healthy test buffers...")
             for _, blocks in fifo_queue:
                 for base_va, _ in blocks:
-                    kernel32.VirtualFree(base_va, 0, MEM_RELEASE)
+                    self._free_block(base_va)
             self._emit_stats(cycle, 0, 0.0, "Stopped", soak_progress=0.0)
             self.log("=== BadPageHunter stopped. All healthy test buffers released. ===")
         return self.bad_pfns
-

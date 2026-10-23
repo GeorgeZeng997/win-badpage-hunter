@@ -1,4 +1,4 @@
-name: Build & Package Windows GUI Application
+name: Build & Package Multi-Platform GUI Application
 
 on:
   push:
@@ -19,10 +19,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-windows-exe:
-    name: Build Standalone Windows x64 App
+  # ===========================================================================
+  # 1. Windows x64 Standalone GUI (.exe + .zip)
+  # ===========================================================================
+  build-windows:
+    name: Build Windows x64 (.exe)
     runs-on: windows-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -34,25 +36,25 @@ jobs:
           architecture: "x64"
           cache: "pip"
 
-      - name: Install Build Dependencies
+      - name: Install Dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Smoke Test CLI & Modules
+      - name: Smoke Test Modules
         shell: pwsh
         run: |
           python -m badpage_hunter --help
-          python -c "import badpage_hunter, badpage_hunter.gui, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('All modules imported successfully:', badpage_hunter.__version__)"
+          python -c "import badpage_hunter, badpage_hunter.gui; print('Windows modules OK:', badpage_hunter.__version__)"
 
-      - name: Package Standalone GUI Executable (PyInstaller)
+      - name: Package Windows Executable (PyInstaller)
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
             --uac-admin `
-            --name "win-badpage-hunter" `
+            --name "win-badpage-hunter-windows-x64" `
             --icon "assets/icon.ico" `
             --add-data "assets/icon.ico;assets" `
             --exclude-module matplotlib `
@@ -62,57 +64,187 @@ jobs:
             --exclude-module PyQt5 `
             run_app.py
 
-      - name: Create Release Archive & SHA256 Checksums
+      - name: Create Windows Release Archive
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path dist/release-assets | Out-Null
           New-Item -ItemType Directory -Force -Path dist/bundle | Out-Null
-          Copy-Item dist/win-badpage-hunter.exe dist/bundle/
+          Copy-Item dist/win-badpage-hunter-windows-x64.exe dist/release-assets/win-badpage-hunter-windows-x64.exe
+          Copy-Item dist/win-badpage-hunter-windows-x64.exe dist/bundle/win-badpage-hunter.exe
           Copy-Item README.md dist/bundle/
           Copy-Item LICENSE dist/bundle/
-          Compress-Archive -Path dist/bundle/* -DestinationPath dist/win-badpage-hunter-win64.zip -Force
+          Compress-Archive -Path dist/bundle/* -DestinationPath dist/release-assets/win-badpage-hunter-windows-x64.zip -Force
 
-          $exeHash = (Get-FileHash dist/win-badpage-hunter.exe -Algorithm SHA256).Hash.ToLower()
-          $zipHash = (Get-FileHash dist/win-badpage-hunter-win64.zip -Algorithm SHA256).Hash.ToLower()
-          @(
-            "$exeHash  win-badpage-hunter.exe",
-            "$zipHash  win-badpage-hunter-win64.zip"
-          ) | Set-Content -Path dist/SHA256SUMS.txt -Encoding UTF8
-          Get-Content dist/SHA256SUMS.txt
-
-      - name: Upload Build Artifacts
+      - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: win-badpage-hunter-win64
-          path: |
-            dist/win-badpage-hunter.exe
-            dist/win-badpage-hunter-win64.zip
-            dist/SHA256SUMS.txt
+          name: pkg-windows-x64
+          path: dist/release-assets/*
           if-no-files-found: error
+
+  # ===========================================================================
+  # 2. Linux x64 Standalone GUI & CLI Binary (.tar.gz)
+  # ===========================================================================
+  build-linux:
+    name: Build Linux x64 (Binary & .tar.gz)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e .
+
+      - name: Smoke Test Modules
+        shell: bash
+        run: |
+          python -m badpage_hunter --help
+          python -c "import badpage_hunter, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('Linux modules OK:', badpage_hunter.__version__)"
+
+      - name: Package Linux Executable (PyInstaller)
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --onefile \
+            --name "win-badpage-hunter-linux-x64" \
+            --add-data "assets/icon.ico:assets" \
+            --exclude-module matplotlib \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module PIL \
+            --exclude-module PyQt5 \
+            run_app.py
+
+      - name: Create Linux Release Archive
+        shell: bash
+        run: |
+          mkdir -p dist/release-assets dist/bundle
+          chmod +x dist/win-badpage-hunter-linux-x64
+          cp dist/win-badpage-hunter-linux-x64 dist/release-assets/win-badpage-hunter-linux-x64
+          cp dist/win-badpage-hunter-linux-x64 dist/bundle/win-badpage-hunter
+          cp README.md LICENSE dist/bundle/
+          tar -czvf dist/release-assets/win-badpage-hunter-linux-x64.tar.gz -C dist/bundle .
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-linux-x64
+          path: dist/release-assets/*
+          if-no-files-found: error
+
+  # ===========================================================================
+  # 3. macOS Apple Silicon (ARM64) Standalone App & Binary (.tar.gz)
+  # ===========================================================================
+  build-macos:
+    name: Build macOS ARM64 (.app & .tar.gz)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (macOS)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e .
+
+      - name: Smoke Test Modules
+        shell: bash
+        run: |
+          python -m badpage_hunter --help
+          python -c "import badpage_hunter, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('macOS modules OK:', badpage_hunter.__version__)"
+
+      - name: Package macOS Application & Binary (PyInstaller)
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed \
+            --name "win-badpage-hunter-macos-arm64" \
+            --icon "assets/icon.ico" \
+            --add-data "assets/icon.ico:assets" \
+            --exclude-module matplotlib \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module PIL \
+            --exclude-module PyQt5 \
+            run_app.py
+
+      - name: Create macOS Release Archive
+        shell: bash
+        run: |
+          mkdir -p dist/release-assets dist/bundle
+          chmod +x dist/win-badpage-hunter-macos-arm64
+          cp -R dist/win-badpage-hunter-macos-arm64.app dist/bundle/ 2>/dev/null || true
+          cp dist/win-badpage-hunter-macos-arm64 dist/bundle/win-badpage-hunter
+          cp README.md LICENSE dist/bundle/
+          tar -czvf dist/release-assets/win-badpage-hunter-macos-arm64.tar.gz -C dist/bundle .
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-arm64
+          path: dist/release-assets/*
+          if-no-files-found: error
+
+  # ===========================================================================
+  # 4. Publish Unified Multi-Platform GitHub Release
+  # ===========================================================================
+  publish-release:
+    name: Publish Multi-Platform GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download All Platform Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+          merge-multiple: true
+
+      - name: Generate Unified SHA256SUMS.txt
+        shell: bash
+        run: |
+          cd release-dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Determine Release Tag
         id: rel_tag
-        if: github.event_name != 'pull_request'
-        shell: pwsh
+        shell: bash
         run: |
-          if ($env:GITHUB_REF -like "refs/tags/*") {
-            $tag = $env:GITHUB_REF_NAME
-          } else {
-            $ver = (python -c "import badpage_hunter; print(badpage_hunter.__version__)").Trim()
-            $tag = "v$ver"
-          }
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Target Release Tag: $tag"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            VER=$(python3 -c "import badpage_hunter; print(badpage_hunter.__version__)")
+            TAG="v${VER}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Target Release Tag: $TAG"
 
       - name: Publish to GitHub Releases
-        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.rel_tag.outputs.tag }}
-          name: "Win-BadPage-Hunter ${{ steps.rel_tag.outputs.tag }} (Windows x64 Desktop GUI + CLI)"
+          name: "Win-BadPage-Hunter ${{ steps.rel_tag.outputs.tag }} (Windows / Linux / macOS)"
           generate_release_notes: true
-          files: |
-            dist/win-badpage-hunter.exe
-            dist/win-badpage-hunter-win64.zip
-            dist/SHA256SUMS.txt
+          files: release-dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
