@@ -7,7 +7,7 @@ name = "win-badpage-hunter"
 version = "1.1.0"
 description = "Diagnose BSOD bit-flips from Windows Minidumps, hunt leaky DRAM pages in user-mode, resolve hardware PFNs via Superfetch, and surgically isolate bad RAM via Windows BCD (CLI + Desktop GUI)."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "GeorgeZeng997"}
 ]
@@ -15,9 +15,9 @@ keywords = ["windows", "bsod", "memory", "dram", "bit-flip", "pfn", "bcdedit", "
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows :: Windows 10",
     "Operating System :: Microsoft :: Windows :: Windows 11",
     "Programming Language :: Python :: 3",
@@ -42,3 +42,6 @@ badpage-hunter-gui = "badpage_hunter.gui:launch_gui"
 [project.urls]
 Homepage = "https://github.com/GeorgeZeng997/win-badpage-hunter"
 Repository = "https://github.com/GeorgeZeng997/win-badpage-hunter.git"
+
+[tool.setuptools]
+packages = ["badpage_hunter"]

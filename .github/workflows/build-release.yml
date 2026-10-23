@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
 jobs:
   build-windows-exe:
     name: Build Standalone Windows x64 App
@@ -41,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           python -m badpage_hunter --help
-          python -m badpage_hunter status
+          python -c "import badpage_hunter, badpage_hunter.gui, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('All modules imported successfully:', badpage_hunter.__version__)"
 
       - name: Package Standalone GUI Executable (PyInstaller)
         shell: pwsh
