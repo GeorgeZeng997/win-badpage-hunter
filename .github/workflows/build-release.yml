@@ -15,8 +15,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-pipeline
-  cancel-in-progress: false
+  group: release-pipeline-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ===========================================================================
@@ -175,7 +175,6 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed \
             --name "win-badpage-hunter-macos-arm64" \
-            --icon "assets/icon.ico" \
             --add-data "assets/icon.ico:assets" \
             --exclude-module matplotlib \
             --exclude-module scipy \
