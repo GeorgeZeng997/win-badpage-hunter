@@ -100,6 +100,12 @@ def parse_minidump(filepath: str) -> Dict:
             saved_ctx = read_context(rel_off)
             break
 
+    # Fallback: check embedded exception CONTEXT at 0x348 if its RIP matches Param2
+    if saved_ctx is None and len(data) >= 0x348 + 0x4D0:
+        cand_ctx = read_context(0x348)
+        if cand_ctx.get("RIP") == p2 and (cand_ctx.get("RSP", 0) >> 48) == 0xFFFF:
+            saved_ctx = cand_ctx
+
     active_ctx = saved_ctx if saved_ctx else primary_ctx
     bitflips = []
     for reg_name, reg_val in active_ctx.items():

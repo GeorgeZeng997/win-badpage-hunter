@@ -88,6 +88,32 @@ def infer_dram_row_twins(pfns: Iterable[int]) -> Set[int]:
     return expanded
 
 
+def synthesize_imc_bank_pfns(pfns: Iterable[int], offsets: Tuple[int, ...] = (0, 3, 4, 5, 7)) -> Set[int]:
+    """
+    Given a seed set of faulty PFNs on an Intel Alder Lake / Raptor Lake dual-channel IMC,
+    synthesize the full algebraic family of 8-page groups sharing the same defective DRAM Bank
+    and Sub-Array column across active rank prefixes (Group = PFN >> 3):
+      b0 = b1 ^ (((b2 & 1) ^ ((b2 >> 3) & 1)) << 3) ^ ((((b2 >> 1) & 1) ^ ((b2 >> 2) & 1) ^ r) << 2)
+      where b1 in {0, 1, 2, 3, 8, 9, 10, 11} ((b1 & 4) == 0).
+    """
+    expanded: Set[int] = set(pfns)
+    prefixes = {(p >> 15) for p in pfns}
+    max_b2 = max((((p >> 3) >> 8) & 0xF for p in pfns), default=8)
+    for pref in prefixes:
+        r = (pref >> 7) & 1
+        base_grp = pref << 12
+        for b2 in range(0, max_b2 + 1):
+            bit3 = (b2 & 1) ^ ((b2 >> 3) & 1)
+            bit2 = ((b2 >> 1) & 1) ^ ((b2 >> 2) & 1) ^ r
+            mask = (bit3 << 3) | (bit2 << 2)
+            for b1 in (0, 1, 2, 3, 8, 9, 10, 11):
+                b0 = b1 ^ mask
+                grp = base_grp | (b2 << 8) | (b1 << 4) | b0
+                for rem in offsets:
+                    expanded.add((grp << 3) | rem)
+    return expanded
+
+
 def update_bcd_badmemory(new_pfns: Iterable[int], include_row_twins: bool = True) -> Tuple[Set[int], str]:
     """
     Merge new PFNs into Windows BCD {badmemory} badmemorylist (or Linux soft_offline_page + store).
