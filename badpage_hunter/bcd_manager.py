@@ -30,7 +30,7 @@ def is_admin() -> bool:
 
 
 def get_existing_bad_pfns() -> Set[int]:
-    """Read currently configured PFNs in Windows BCD {badmemory} (or local PFN store on Linux/macOS)."""
+    """Read currently configured PFNs in Windows BCD {badmemory} (via native bcd.dll or fallback bcdedit)."""
     if not IS_WINDOWS:
         store = _posix_store_path()
         if os.path.exists(store):
@@ -41,6 +41,32 @@ def get_existing_bad_pfns() -> Set[int]:
             except Exception:
                 return set()
         return set()
+
+    try:
+        import struct
+        from ctypes import wintypes
+
+        bcd = ctypes.WinDLL("bcd.dll")
+        hStore = wintypes.HANDLE()
+        if (bcd.BcdOpenSystemStore(ctypes.byref(hStore)) & 0xFFFFFFFF) == 0:
+            try:
+                guid_badmem = ctypes.c_void_p.in_dll(bcd, "GUID_BAD_MEMORY_GROUP")
+                hObj = wintypes.HANDLE()
+                if (bcd.BcdOpenObject(hStore, ctypes.byref(guid_badmem), ctypes.byref(hObj)) & 0xFFFFFFFF) == 0:
+                    try:
+                        sz = wintypes.ULONG(0)
+                        bcd.BcdGetElementData(hObj, 0x1700000A, None, ctypes.byref(sz))
+                        if sz.value > 0 and sz.value % 8 == 0:
+                            buf = ctypes.create_string_buffer(sz.value)
+                            st = bcd.BcdGetElementData(hObj, 0x1700000A, buf, ctypes.byref(sz)) & 0xFFFFFFFF
+                            if st == 0:
+                                return set(struct.unpack(f"<{sz.value // 8}Q", buf.raw))
+                    finally:
+                        bcd.BcdCloseObject(hObj)
+            finally:
+                bcd.BcdCloseStore(hStore)
+    except Exception:
+        pass
 
     res = subprocess.run(
         ["bcdedit", "/enum", "{badmemory}"],
@@ -144,7 +170,36 @@ def update_bcd_badmemory(new_pfns: Iterable[int], include_row_twins: bool = True
         grub_arg = " ".join(f"memmap=4K\\$0x{p << 12:x}" for p in sorted_pfns[:8])
         return pfns, f"Saved {len(pfns)} PFNs (soft-offlined={offlined}). GRUB: {grub_arg}"
 
-    hex_list: List[str] = [f"0x{x:x}" for x in sorted(pfns)]
+    sorted_pfns = sorted(pfns)
+    try:
+        import struct
+        from ctypes import wintypes
+
+        bcd = ctypes.WinDLL("bcd.dll")
+        hStore = wintypes.HANDLE()
+        if (bcd.BcdOpenSystemStore(ctypes.byref(hStore)) & 0xFFFFFFFF) == 0:
+            try:
+                guid_badmem = ctypes.c_void_p.in_dll(bcd, "GUID_BAD_MEMORY_GROUP")
+                hObj = wintypes.HANDLE()
+                if (bcd.BcdOpenObject(hStore, ctypes.byref(guid_badmem), ctypes.byref(hObj)) & 0xFFFFFFFF) == 0:
+                    try:
+                        blob = struct.pack(f"<{len(sorted_pfns)}Q", *sorted_pfns)
+                        st = bcd.BcdSetElementData(hObj, 0x1700000A, blob, len(blob)) & 0xFFFFFFFF
+                        if st == 0:
+                            subprocess.run(
+                                ["bcdedit", "/set", "{badmemory}", "badmemoryaccess", "no"],
+                                capture_output=True,
+                                creationflags=CREATE_NO_WINDOW,
+                            )
+                            return pfns, f"Written {len(sorted_pfns)} PFNs via native bcd.dll (NTSTATUS=0x00000000)"
+                    finally:
+                        bcd.BcdCloseObject(hObj)
+            finally:
+                bcd.BcdCloseStore(hStore)
+    except Exception:
+        pass
+
+    hex_list: List[str] = [f"0x{x:x}" for x in sorted_pfns]
     cmd = ["bcdedit", "/set", "{badmemory}", "badmemorylist"] + hex_list
     res = subprocess.run(
         cmd,

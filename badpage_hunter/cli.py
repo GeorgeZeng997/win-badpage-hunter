@@ -70,20 +70,38 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  Range {idx:2d}: PFN 0x{start_pfn:07X} .. 0x{end_pfn:07X} ({end_pfn - start_pfn:8d} pages, {mb:9.2f} MB)")
 
     bad_pfns = sorted(get_existing_bad_pfns())
-    print(f"\nWindows BCD {{badmemory}} Isolated PFNs ({len(bad_pfns)} pages = {len(bad_pfns) * 4} KB):")
+    print(f"\nWindows BCD {{badmemory}} Isolated PFNs ({len(bad_pfns)} pages = {len(bad_pfns) * 4 / 1024:.2f} MB):")
     if not bad_pfns:
         print("  (None configured)")
         return 0
 
-    for i in range(0, len(bad_pfns), 6):
-        chunk = bad_pfns[i : i + 6]
-        print("  " + "  ".join(f"0x{p:06x}" for p in chunk))
+    if len(bad_pfns) <= 60:
+        for i in range(0, len(bad_pfns), 6):
+            chunk = bad_pfns[i : i + 6]
+            print("  " + "  ".join(f"0x{p:06x}" for p in chunk))
+    else:
+        runs = []
+        r_start = r_prev = bad_pfns[0]
+        for p in bad_pfns[1:]:
+            if p == r_prev + 1:
+                r_prev = p
+            else:
+                runs.append((r_start, r_prev))
+                r_start = r_prev = p
+        runs.append((r_start, r_prev))
+        print(f"  Summary ({len(runs)} contiguous range(s)):")
+        for s, e in runs[:20]:
+            cnt = e - s + 1
+            print(f"    PFN 0x{s:06X} .. 0x{e:06X} ({cnt:6d} pages, {cnt * 4 / 1024:6.2f} MB)")
+        if len(runs) > 20:
+            print(f"    ... ({len(runs) - 20} more range(s))")
 
-    records = query_pfn_database_status(bad_pfns)
+    sample_pfns = bad_pfns if len(bad_pfns) <= 64 else (bad_pfns[:16] + bad_pfns[len(bad_pfns) // 2 : len(bad_pfns) // 2 + 16] + bad_pfns[-16:])
+    records = query_pfn_database_status(sample_pfns)
     excised = [r for r in records if r[1] == 0xC00000F0 or (r[2] == 0 and r[3] <= 2)]
     staged = [r for r in records if not (r[1] == 0xC00000F0 or (r[2] == 0 and r[3] <= 2))]
     print(
-        f"\nKernel _MMPFN Verification ({len(excised)}/{len(records)} active kernel-excised, "
+        f"\nKernel _MMPFN Verification ({len(excised)}/{len(records)} sampled active kernel-excised, "
         f"{len(staged)}/{len(records)} staged for next reboot):"
     )
     for pfn, st, u1, va in records[:12]:
