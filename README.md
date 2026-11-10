@@ -192,34 +192,39 @@ pip install -e .
 
 ## Desktop GUI & CLI Usage
 
-### Launch Desktop GUI (Bilingual 中文 / English)
+### Launch Desktop GUI
 Running `badpage-hunter` with no arguments (or `python -m badpage_hunter gui`) opens the dark-themed hardware diagnostics GUI featuring 4 integrated workspaces:
-1. **Kernel & Physical Memory Status (`📊 内核与物理内存概览`)**: Live RAM telemetry, `MmPhysicalMemoryBlock` descriptor range viewer, and `_MMPFN` bootloader excision verification.
-2. **Live DRAM Bit-Flip Hunter (`🎯 实时坏页猎手`)**: One-click auto-tuning for your PC's RAM size, real-time charge-retention soak progress bar, live telemetry counters, and color-coded event console.
-3. **BSOD Minidump Analyzer (`🔍 蓝屏转储取证`)**: Interactive `PAGEDU64` crash dump inspector highlighting non-canonical single-bit register flips (`1 -> 0` in bits 48..63) and call stack symbols.
-4. **BCD `{badmemory}` Manager (`🛡️ BCD 坏页隔离管理`)**: Add/remove PFNs, preview `+3 / +5` DRAM row-twin couplings (`PFN ^ 6`), export/import PFN backup lists (`.json`/`.txt`), or reset `{badmemory}`.
+1. **Kernel & Memory Status (`📊 Kernel & Memory Status`)**: Live RAM telemetry, `MmPhysicalMemoryBlock` descriptor range viewer, `_MMPFN` bootloader excision verification, and one-click JSON diagnostic snapshot export.
+2. **Live DRAM Bit-Flip Hunter (`🎯 Live DRAM Bit-Flip Hunter`)**: One-click auto-tuning for your PC's RAM size, real-time charge-retention soak progress bar, live telemetry counters, and color-coded event console.
+3. **BSOD Minidump Analyzer (`🔍 BSOD Minidump Analyzer`)**: Interactive `PAGEDU64` crash dump inspector highlighting non-canonical single-bit register flips (`1 -> 0` in bits 47..63) and call stack symbols.
+4. **BCD `{badmemory}` Manager (`🛡️ BCD {badmemory} Manager`)**: Add/remove PFNs, preview `+3 / +5` DRAM row-twin couplings (`PFN ^ 6`), export/import PFN backup lists (`.json`/`.txt`), or reset `{badmemory}`.
 
 ```powershell
 # Launch Desktop GUI
 python -m badpage_hunter
-# Or specify initial language (zh / en)
-python -m badpage_hunter gui --lang en
+# Or invoke explicitly via subcommand
+python -m badpage_hunter gui
 ```
 
 ### CLI Subcommands
 
 ### 1. Analyze BSOD Minidumps for Hardware Bit-Flips
-Scan `C:\Windows\Minidump` to determine whether your BSODs are caused by single-bit DRAM decay or faulty drivers:
+Scan `C:\Windows\Minidump` (or export a structured JSON crash triage report) to determine whether your BSODs are caused by single-bit DRAM decay or faulty drivers:
 
 ```powershell
 python -m badpage_hunter analyze-dumps
+python -m badpage_hunter analyze-dumps --json --export minidump_report.json
 ```
 
-### 2. Inspect Kernel Physical Memory Map & BCD `{badmemory}` Status
-View the active `MmPhysicalMemoryBlock` descriptor ranges, configured `{badmemory}` PFN list, and live `_MMPFN` bootloader excision status:
+### 2. Inspect Kernel Physical Memory Map, DRAM Cluster Health & Snapshot Diffs
+View the active `MmPhysicalMemoryBlock` descriptor ranges, DRAM rank-band cluster health score (`0..100`), configured `{badmemory}` PFN list, and live `_MMPFN` bootloader excision status—or export and diff snapshots across reboots:
 
 ```powershell
-python -m badpage_hunter status
+# Inspect live kernel status & export baseline JSON snapshot
+python -m badpage_hunter status --export baseline_status.json
+
+# Compare baseline snapshot against current live system (or a second JSON snapshot)
+python -m badpage_hunter diff baseline_status.json
 ```
 
 ### 3. Hunt & Isolate Faulty Physical Pages in Live Windows

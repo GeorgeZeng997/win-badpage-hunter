@@ -43,11 +43,12 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Smoke Test Modules
+      - name: Smoke Test & Unit Tests
         shell: pwsh
         run: |
           python -m badpage_hunter --help
           python -c "import badpage_hunter, badpage_hunter.gui; print('Windows modules OK:', badpage_hunter.__version__)"
+          python -m unittest discover -s tests -v
 
       - name: Package Windows Executable (PyInstaller)
         shell: pwsh
@@ -105,11 +106,12 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Smoke Test Modules
+      - name: Smoke Test & Unit Tests
         shell: bash
         run: |
           python -m badpage_hunter --help
           python -c "import badpage_hunter, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('Linux modules OK:', badpage_hunter.__version__)"
+          python -m unittest discover -s tests -v
 
       - name: Package Linux Executable (PyInstaller)
         shell: bash
@@ -164,11 +166,12 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Smoke Test Modules
+      - name: Smoke Test & Unit Tests
         shell: bash
         run: |
           python -m badpage_hunter --help
           python -c "import badpage_hunter, badpage_hunter.hunter, badpage_hunter.dmp_analyzer, badpage_hunter.bcd_manager, badpage_hunter.pfn_resolver; print('macOS modules OK:', badpage_hunter.__version__)"
+          python -m unittest discover -s tests -v
 
       - name: Package macOS Application & Binary (PyInstaller)
         shell: bash
