@@ -43,95 +43,12 @@ BORDER_COLOR = "#334155"
 
 
 I18N: Dict[str, Dict[str, str]] = {
-    "zh": {
-        "app_title": f"Win-BadPage-Hunter v{__version__} — 内存位翻转猎手与内核级物理坏页隔离工具",
-        "header_subtitle": "用户态 DRAM 电荷衰减位翻转猎手 · PAGEDU64 蓝屏转储取证 · Windows BCD {badmemory} 物理页帧手术刀",
-        "admin_ok": "✔ 管理员权限 & Superfetch 已就绪",
-        "admin_no": "⚠ 当前非管理员权限 (点击以管理员身份重启)",
-        "lang_btn": "🌐 English",
-        "ram_status_fmt": "物理内存: 可用 {avail:.2f} GB / 总计 {total:.2f} GB (负载 {load}%)",
-        "tab_status": " 📊 内核与物理内存概览 ",
-        "tab_hunter": " 🎯 实时坏页猎手 (DRAM Hunter) ",
-        "tab_dmp": " 🔍 蓝屏转储取证 (Minidump) ",
-        "tab_bcd": " 🛡️ BCD 坏页隔离管理 ",
-        # Status tab
-        "card_ram_title": "系统物理内存 (RAM)",
-        "card_ranges_title": "内核物理内存活动段",
-        "card_isolated_title": "BCD 已隔离坏页总数",
-        "card_excised_title": "引导层已切除 (_MMPFN)",
-        "btn_refresh_status": "🔄 刷新内核与 BCD 状态",
-        "lbl_phys_ranges": "MmPhysicalMemoryBlock 活动物理内存段 (注册表 .Translated)",
-        "lbl_pfn_verify": "Windows BCD {badmemory} 坏页在内核 _MMPFN 数据库中的实时状态",
-        "col_range_id": "段序号",
-        "col_start_pfn": "起始 PFN",
-        "col_end_pfn": "结束 PFN",
-        "col_pages": "页数 (4KB)",
-        "col_size_mb": "容量 (MB)",
-        "col_pfn": "PFN (Hex)",
-        "col_phys_addr": "物理地址 (PhysAddr)",
-        "col_row_group": "DRAM 行簇 (PFN>>3)",
-        "col_offset": "簇内偏移",
-        "col_kernel_state": "内核状态 (_MMPFN)",
-        "state_excised": "✔ 已由引导层切除 (0xC00000F0)",
-        "state_staged": "⏳ 已写入 BCD (重启后切除)",
-        # Hunter tab
-        "lbl_hunter_cfg": "FIFO 滑动窗口电荷保持扫描参数",
-        "lbl_window_batches": "滑动窗口批次数 (Batches):",
-        "lbl_batch_gb": "单批次容量 (GB):",
-        "lbl_block_mb": "单块分配粒度 (MB):",
-        "lbl_min_avail_gb": "系统保底空闲内存 (GB):",
-        "lbl_soak_sec": "电荷保持静置时间 (秒):",
-        "lbl_max_cycles": "最大循环轮次 (0=持续运行):",
-        "chk_row_twins": "捕获坏页时自动推导并隔离同簇 +3/+5 耦合孪生页 (PFN ^ 6)",
-        "btn_autotune": "⚡ 智能推荐本机参数",
-        "btn_start_hunt": "▶ 启动实时坏页猎手",
-        "btn_stop_hunt": "⏹ 停止并释放测试内存",
-        "btn_clear_log": "🧹 清空日志",
-        "btn_export_log": "💾 导出日志",
-        "stat_cycle": "当前扫描轮次",
-        "stat_window": "活动窗口占用",
-        "stat_flips": "捕获位翻转数",
-        "stat_new_pfns": "本次新增坏页",
-        "stat_pinned": "运行期锁定页 (VirtualLock)",
-        "phase_idle": "就绪 — 点击「启动实时坏页猎手」开始后台低内存滑动窗口扫描",
-        # Dmp tab
-        "lbl_dmp_dir": "蓝屏转储目录 / 文件:",
-        "btn_browse_dir": "📂 选择目录",
-        "btn_browse_file": "📄 选择单个 .dmp",
-        "btn_analyze_dmp": "🔍 扫描并分析转储",
-        "col_dmp_file": "转储文件名",
-        "col_dmp_os": "OS 版本",
-        "col_dmp_bugcheck": "蓝屏代码 (BugCheck)",
-        "col_dmp_rip": "崩溃地址 (RIP)",
-        "col_dmp_verdict": "硬件单比特翻转判定",
-        "verdict_flip": "🚨 检测到硬件位翻转 ({count} 处)",
-        "verdict_clean": "✔ 未见高16位非规范指针翻转",
-        "verdict_error": "❌ 解析失败: {err}",
-        "lbl_dmp_detail": "转储取证详情 (CPU 寄存器上下文、非规范指针位翻转还原与调用栈)",
-        # BCD tab
-        "lbl_bcd_input": "手动添加隔离 PFN (支持十六进制如 0x2c008d 或十进制，以空格/逗号分隔):",
-        "btn_bcd_add": "➕ 写入 BCD 隔离列表",
-        "btn_bcd_preview": "🔍 预览 +3/+5 孪生推导",
-        "btn_bcd_remove": "🗑 移除选中 PFN",
-        "btn_bcd_clear": "🧹 清空全部 BCD 坏页",
-        "btn_bcd_export": "📤 导出坏页列表",
-        "btn_bcd_import": "📥 导入坏页列表",
-        "btn_bcd_copy_cmd": "📋 复制 bcdedit 命令",
-        "col_idx": "#",
-        "col_pfn_dec": "PFN (十进制)",
-        "col_twin": "配对孪生页 (PFN^6)",
-        "col_twin_status": "孪生页状态",
-        "twin_included": "✔ 已同时隔离",
-        "twin_missing": "⚠ 未隔离",
-        "twin_na": "非 +3/+5 偏移",
-        "reboot_notice": "💡 提示：修改 Windows BCD {badmemory} 后，请重启一次电脑，以便 winload.efi 在内核初始化阶段将坏页从物理内存映射表中彻底切除。",
-    },
     "en": {
-        "app_title": f"Win-BadPage-Hunter v{__version__} — DRAM Bit-Flip Hunter & Kernel BCD Page Isolator",
-        "header_subtitle": "User-Mode DRAM Charge-Retention Hunter · PAGEDU64 BSOD Forensics · Windows BCD {badmemory} Excision",
+        "app_title": f"Win-BadPage-Hunter v{__version__} - DRAM Bit-Flip Hunter & Kernel BCD Page Isolator",
+        "header_subtitle": "User-Mode DRAM Charge-Retention Hunter | PAGEDU64 BSOD Forensics | Windows BCD {badmemory} Excision",
         "admin_ok": "✔ Administrator & Superfetch Ready",
         "admin_no": "⚠ Not Elevated (Click to Restart as Admin)",
-        "lang_btn": "🌐 中文",
+        "snap_btn": "💾 Export Snapshot JSON",
         "ram_status_fmt": "Physical RAM: {avail:.2f} GB Free / {total:.2f} GB Total ({load}% Load)",
         "tab_status": " 📊 Kernel & Memory Status ",
         "tab_hunter": " 🎯 Live DRAM Bit-Flip Hunter ",
@@ -248,9 +165,9 @@ def resource_path(rel_path: str) -> str:
 
 
 class BadPageHunterGUI:
-    def __init__(self, root: tk.Tk, lang: str = "zh") -> None:
+    def __init__(self, root: tk.Tk, lang: str = "en") -> None:
         self.root = root
-        self.lang = lang
+        self.lang = "en"
         self.ui_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue()
         self.hunter: Optional[BadPageHunter] = None
         self.hunter_thread: Optional[threading.Thread] = None
@@ -268,7 +185,7 @@ class BadPageHunterGUI:
         self._schedule_periodic_tasks()
 
     def t(self, key: str) -> str:
-        return I18N.get(self.lang, I18N["zh"]).get(key, key)
+        return I18N["en"].get(key, key)
 
     def _setup_window(self) -> None:
         self.root.title(self.t("app_title"))
@@ -287,15 +204,15 @@ class BadPageHunterGUI:
         style = ttk.Style(self.root)
         style.theme_use("clam")
 
-        style.configure(".", background=BG_ROOT, foreground=FG_PRIMARY, font=("Microsoft YaHei UI", 10))
+        style.configure(".", background=BG_ROOT, foreground=FG_PRIMARY, font=("Segoe UI", 10))
         style.configure("TFrame", background=BG_ROOT)
         style.configure("Panel.TFrame", background=BG_PANEL)
         style.configure("Card.TFrame", background=BG_CARD)
 
-        style.configure("TLabel", background=BG_ROOT, foreground=FG_PRIMARY, font=("Microsoft YaHei UI", 10))
-        style.configure("Panel.TLabel", background=BG_PANEL, foreground=FG_PRIMARY, font=("Microsoft YaHei UI", 10))
-        style.configure("Muted.TLabel", background=BG_PANEL, foreground=FG_SECONDARY, font=("Microsoft YaHei UI", 9))
-        style.configure("CardTitle.TLabel", background=BG_CARD, foreground=FG_SECONDARY, font=("Microsoft YaHei UI", 9))
+        style.configure("TLabel", background=BG_ROOT, foreground=FG_PRIMARY, font=("Segoe UI", 10))
+        style.configure("Panel.TLabel", background=BG_PANEL, foreground=FG_PRIMARY, font=("Segoe UI", 10))
+        style.configure("Muted.TLabel", background=BG_PANEL, foreground=FG_SECONDARY, font=("Segoe UI", 9))
+        style.configure("CardTitle.TLabel", background=BG_CARD, foreground=FG_SECONDARY, font=("Segoe UI", 9))
         style.configure("CardValue.TLabel", background=BG_CARD, foreground=ACCENT_BLUE, font=("Consolas", 16, "bold"))
 
         # Notebook
@@ -310,7 +227,7 @@ class BadPageHunterGUI:
             background=BG_CARD,
             foreground=FG_SECONDARY,
             padding=[16, 9],
-            font=("Microsoft YaHei UI", 10, "bold"),
+            font=("Segoe UI", 10, "bold"),
             borderwidth=0,
         )
         style.map(
@@ -333,7 +250,7 @@ class BadPageHunterGUI:
             "Treeview.Heading",
             background=BG_CARD,
             foreground=FG_PRIMARY,
-            font=("Microsoft YaHei UI", 9, "bold"),
+            font=("Segoe UI", 9, "bold"),
             padding=[6, 6],
             relief="flat",
         )
@@ -349,7 +266,7 @@ class BadPageHunterGUI:
             "Accent.TButton",
             background=ACCENT_BLUE,
             foreground="#0B1120",
-            font=("Microsoft YaHei UI", 10, "bold"),
+            font=("Segoe UI", 10, "bold"),
             padding=[14, 7],
             borderwidth=0,
         )
@@ -363,7 +280,7 @@ class BadPageHunterGUI:
             "Danger.TButton",
             background=COLOR_DANGER,
             foreground="#FFFFFF",
-            font=("Microsoft YaHei UI", 10, "bold"),
+            font=("Segoe UI", 10, "bold"),
             padding=[14, 7],
             borderwidth=0,
         )
@@ -377,7 +294,7 @@ class BadPageHunterGUI:
             "Secondary.TButton",
             background=BG_CARD,
             foreground=FG_PRIMARY,
-            font=("Microsoft YaHei UI", 9),
+            font=("Segoe UI", 9),
             padding=[12, 6],
             borderwidth=1,
         )
@@ -403,7 +320,7 @@ class BadPageHunterGUI:
             "Panel.TCheckbutton",
             background=BG_PANEL,
             foreground=FG_PRIMARY,
-            font=("Microsoft YaHei UI", 10),
+            font=("Segoe UI", 10),
         )
         style.map("Panel.TCheckbutton", background=[("active", BG_PANEL)])
 
@@ -429,7 +346,7 @@ class BadPageHunterGUI:
             text=self.t("header_subtitle"),
             bg=BG_PANEL,
             fg=FG_SECONDARY,
-            font=("Microsoft YaHei UI", 9),
+            font=("Segoe UI", 9),
         )
         self.lbl_subtitle.pack(anchor="w", pady=(2, 0))
 
@@ -450,7 +367,7 @@ class BadPageHunterGUI:
             relief="flat",
             padx=10,
             pady=4,
-            font=("Microsoft YaHei UI", 9, "bold"),
+            font=("Segoe UI", 9, "bold"),
             cursor="hand2" if not admin_flag else "arrow",
             command=self._relaunch_as_admin if not admin_flag else lambda: None,
         )
@@ -458,7 +375,7 @@ class BadPageHunterGUI:
 
         self.btn_lang = tk.Button(
             top_btn_row,
-            text=self.t("lang_btn"),
+            text=self.t("snap_btn"),
             bg=BG_CARD,
             fg=FG_PRIMARY,
             activebackground="#334155",
@@ -466,9 +383,9 @@ class BadPageHunterGUI:
             relief="flat",
             padx=10,
             pady=4,
-            font=("Microsoft YaHei UI", 9),
+            font=("Segoe UI", 9),
             cursor="hand2",
-            command=self.toggle_language,
+            command=self.export_status_snapshot,
         )
         self.btn_lang.pack(side="left")
 
@@ -527,7 +444,7 @@ class BadPageHunterGUI:
         self.btn_refresh_status.pack(side="left")
 
         self.lbl_reboot_tip_status = tk.Label(
-            bar, text=self.t("reboot_notice"), bg=BG_PANEL, fg=FG_SECONDARY, font=("Microsoft YaHei UI", 9)
+            bar, text=self.t("reboot_notice"), bg=BG_PANEL, fg=FG_SECONDARY, font=("Segoe UI", 9)
         )
         self.lbl_reboot_tip_status.pack(side="left", padx=14)
 
@@ -542,7 +459,7 @@ class BadPageHunterGUI:
         left_frame = tk.Frame(split, bg=BG_PANEL)
         left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         self.lbl_phys_ranges = tk.Label(
-            left_frame, text=self.t("lbl_phys_ranges"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Microsoft YaHei UI", 10, "bold")
+            left_frame, text=self.t("lbl_phys_ranges"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Segoe UI", 10, "bold")
         )
         self.lbl_phys_ranges.pack(anchor="w", pady=(0, 6))
 
@@ -568,7 +485,7 @@ class BadPageHunterGUI:
         right_frame = tk.Frame(split, bg=BG_PANEL)
         right_frame.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         self.lbl_pfn_verify = tk.Label(
-            right_frame, text=self.t("lbl_pfn_verify"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Microsoft YaHei UI", 10, "bold")
+            right_frame, text=self.t("lbl_pfn_verify"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Segoe UI", 10, "bold")
         )
         self.lbl_pfn_verify.pack(anchor="w", pady=(0, 6))
 
@@ -595,7 +512,7 @@ class BadPageHunterGUI:
     def _make_kpi_card(self, parent: tk.Widget, col: int, title: str, initial_val: str) -> tuple[tk.Label, tk.Label]:
         card = tk.Frame(parent, bg=BG_CARD, padx=14, pady=10, highlightthickness=1, highlightbackground=BORDER_COLOR)
         card.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 6, 0 if col == 3 else 6))
-        lbl_t = tk.Label(card, text=title, bg=BG_CARD, fg=FG_SECONDARY, font=("Microsoft YaHei UI", 9))
+        lbl_t = tk.Label(card, text=title, bg=BG_CARD, fg=FG_SECONDARY, font=("Segoe UI", 9))
         lbl_t.pack(anchor="w")
         lbl_v = tk.Label(card, text=initial_val, bg=BG_CARD, fg=ACCENT_BLUE, font=("Consolas", 15, "bold"))
         lbl_v.pack(anchor="w", pady=(4, 0))
@@ -613,7 +530,7 @@ class BadPageHunterGUI:
         cfg_box.pack(fill="x", pady=(0, 12))
 
         self.lbl_hunter_cfg = tk.Label(
-            cfg_box, text=self.t("lbl_hunter_cfg"), bg=BG_CARD, fg=ACCENT_BLUE, font=("Microsoft YaHei UI", 10, "bold")
+            cfg_box, text=self.t("lbl_hunter_cfg"), bg=BG_CARD, fg=ACCENT_BLUE, font=("Segoe UI", 10, "bold")
         )
         self.lbl_hunter_cfg.pack(anchor="w", pady=(0, 8))
 
@@ -647,7 +564,7 @@ class BadPageHunterGUI:
             selectcolor=BG_INPUT,
             activebackground=BG_CARD,
             activeforeground=FG_PRIMARY,
-            font=("Microsoft YaHei UI", 9),
+            font=("Segoe UI", 9),
         )
         self.chk_twins_widget.pack(side="left")
 
@@ -732,7 +649,7 @@ class BadPageHunterGUI:
         sb_log.pack(side="right", fill="y")
 
     def _add_cfg_field(self, parent: tk.Widget, r: int, c: int, label_text: str, var: tk.StringVar) -> tk.Label:
-        lbl = tk.Label(parent, text=label_text, bg=BG_CARD, fg=FG_SECONDARY, font=("Microsoft YaHei UI", 9))
+        lbl = tk.Label(parent, text=label_text, bg=BG_CARD, fg=FG_SECONDARY, font=("Segoe UI", 9))
         lbl.grid(row=r, column=c, sticky="w", padx=(0 if c == 0 else 16, 6), pady=4)
         ent = tk.Entry(
             parent,
@@ -753,7 +670,7 @@ class BadPageHunterGUI:
     def _make_mini_stat(self, parent: tk.Widget, col: int, title: str, val: str) -> tuple[tk.Label, tk.Label]:
         card = tk.Frame(parent, bg=BG_CARD, padx=10, pady=8, highlightthickness=1, highlightbackground=BORDER_COLOR)
         card.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 5, 0 if col == 4 else 5))
-        lt = tk.Label(card, text=title, bg=BG_CARD, fg=FG_SECONDARY, font=("Microsoft YaHei UI", 8))
+        lt = tk.Label(card, text=title, bg=BG_CARD, fg=FG_SECONDARY, font=("Segoe UI", 8))
         lt.pack(anchor="w")
         lv = tk.Label(card, text=val, bg=BG_CARD, fg=FG_PRIMARY, font=("Consolas", 13, "bold"))
         lv.pack(anchor="w", pady=(2, 0))
@@ -769,7 +686,7 @@ class BadPageHunterGUI:
         top_bar = tk.Frame(container, bg=BG_CARD, padx=12, pady=10, highlightthickness=1, highlightbackground=BORDER_COLOR)
         top_bar.pack(fill="x", pady=(0, 10))
 
-        self.lbl_dmp_dir = tk.Label(top_bar, text=self.t("lbl_dmp_dir"), bg=BG_CARD, fg=FG_PRIMARY, font=("Microsoft YaHei UI", 9))
+        self.lbl_dmp_dir = tk.Label(top_bar, text=self.t("lbl_dmp_dir"), bg=BG_CARD, fg=FG_PRIMARY, font=("Segoe UI", 9))
         self.lbl_dmp_dir.pack(side="left", padx=(0, 8))
 
         self.var_dmp_path = tk.StringVar(value=r"C:\Windows\Minidump")
@@ -829,7 +746,7 @@ class BadPageHunterGUI:
 
         # Lower Forensic Detail Viewer
         self.lbl_dmp_detail = tk.Label(
-            container, text=self.t("lbl_dmp_detail"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Microsoft YaHei UI", 10, "bold")
+            container, text=self.t("lbl_dmp_detail"), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Segoe UI", 10, "bold")
         )
         self.lbl_dmp_detail.pack(anchor="w", pady=(0, 6))
 
@@ -866,7 +783,7 @@ class BadPageHunterGUI:
         input_card.pack(fill="x", pady=(0, 10))
 
         self.lbl_bcd_input = tk.Label(
-            input_card, text=self.t("lbl_bcd_input"), bg=BG_CARD, fg=ACCENT_BLUE, font=("Microsoft YaHei UI", 9, "bold")
+            input_card, text=self.t("lbl_bcd_input"), bg=BG_CARD, fg=ACCENT_BLUE, font=("Segoe UI", 9, "bold")
         )
         self.lbl_bcd_input.pack(anchor="w", pady=(0, 6))
 
@@ -974,69 +891,27 @@ class BadPageHunterGUI:
     # =========================================================================
     # Actions & Event Handlers
     # =========================================================================
-    def toggle_language(self) -> None:
-        self.lang = "en" if self.lang == "zh" else "zh"
-        self.root.title(self.t("app_title"))
-        self.lbl_subtitle.configure(text=self.t("header_subtitle"))
-        admin_flag = is_admin()
-        self.btn_admin.configure(text=self.t("admin_ok") if admin_flag else self.t("admin_no"))
-        self.btn_lang.configure(text=self.t("lang_btn"))
+    def export_status_snapshot(self) -> None:
+        from .cli import build_status_snapshot
 
-        self.notebook.tab(0, text=self.t("tab_status"))
-        self.notebook.tab(1, text=self.t("tab_hunter"))
-        self.notebook.tab(2, text=self.t("tab_dmp"))
-        self.notebook.tab(3, text=self.t("tab_bcd"))
-
-        # Tab 1 labels
-        self.card_ram_lbl.configure(text=self.t("card_ram_title"))
-        self.card_ranges_lbl.configure(text=self.t("card_ranges_title"))
-        self.card_isolated_lbl.configure(text=self.t("card_isolated_title"))
-        self.card_excised_lbl.configure(text=self.t("card_excised_title"))
-        self.btn_refresh_status.configure(text=self.t("btn_refresh_status"))
-        self.lbl_reboot_tip_status.configure(text=self.t("reboot_notice"))
-        self.lbl_phys_ranges.configure(text=self.t("lbl_phys_ranges"))
-        self.lbl_pfn_verify.configure(text=self.t("lbl_pfn_verify"))
-
-        # Tab 2 labels
-        self.lbl_hunter_cfg.configure(text=self.t("lbl_hunter_cfg"))
-        self.lbl_w_batches.configure(text=self.t("lbl_window_batches"))
-        self.lbl_b_gb.configure(text=self.t("lbl_batch_gb"))
-        self.lbl_blk_mb.configure(text=self.t("lbl_block_mb"))
-        self.lbl_min_av.configure(text=self.t("lbl_min_avail_gb"))
-        self.lbl_soak.configure(text=self.t("lbl_soak_sec"))
-        self.lbl_max_c.configure(text=self.t("lbl_max_cycles"))
-        self.chk_twins_widget.configure(text=self.t("chk_row_twins"))
-        self.btn_autotune.configure(text=self.t("btn_autotune"))
-        self.btn_start_hunt.configure(text=self.t("btn_start_hunt"))
-        self.btn_stop_hunt.configure(text=self.t("btn_stop_hunt"))
-        self.btn_clear_log.configure(text=self.t("btn_clear_log"))
-        self.btn_export_log.configure(text=self.t("btn_export_log"))
-        self.lbl_st_cycle_t.configure(text=self.t("stat_cycle"))
-        self.lbl_st_win_t.configure(text=self.t("stat_window"))
-        self.lbl_st_flips_t.configure(text=self.t("stat_flips"))
-        self.lbl_st_new_t.configure(text=self.t("stat_new_pfns"))
-        self.lbl_st_pin_t.configure(text=self.t("stat_pinned"))
-        if not (self.hunter_thread and self.hunter_thread.is_alive()):
-            self.lbl_hunter_phase.configure(text=self.t("phase_idle"))
-
-        # Tab 3 labels
-        self.lbl_dmp_dir.configure(text=self.t("lbl_dmp_dir"))
-        self.btn_browse_dir.configure(text=self.t("btn_browse_dir"))
-        self.btn_browse_file.configure(text=self.t("btn_browse_file"))
-        self.btn_analyze_dmp.configure(text=self.t("btn_analyze_dmp"))
-        self.lbl_dmp_detail.configure(text=self.t("lbl_dmp_detail"))
-
-        # Tab 4 labels
-        self.lbl_bcd_input.configure(text=self.t("lbl_bcd_input"))
-        self.btn_bcd_add.configure(text=self.t("btn_bcd_add"))
-        self.btn_bcd_preview.configure(text=self.t("btn_bcd_preview"))
-        self.btn_bcd_remove.configure(text=self.t("btn_bcd_remove"))
-        self.btn_bcd_clear.configure(text=self.t("btn_bcd_clear"))
-        self.btn_bcd_export.configure(text=self.t("btn_bcd_export"))
-        self.btn_bcd_import.configure(text=self.t("btn_bcd_import"))
-        self.btn_bcd_copy_cmd.configure(text=self.t("btn_bcd_copy_cmd"))
-
-        self.refresh_status_and_bcd()
+        fpath = filedialog.asksaveasfilename(
+            title="Export Diagnostic Snapshot JSON",
+            defaultextension=".json",
+            initialfile="badpage_status_snapshot.json",
+            filetypes=[("JSON Snapshot", "*.json"), ("All files", "*.*")],
+        )
+        if not fpath:
+            return
+        try:
+            snap = build_status_snapshot()
+            with open(fpath, "w", encoding="utf-8") as f:
+                json.dump(snap, f, indent=2)
+            messagebox.showinfo(
+                "Snapshot Exported",
+                f"Saved diagnostic snapshot (Health Score: {snap['cluster_analysis']['health_score']}/100) to:\n{fpath}",
+            )
+        except Exception as exc:
+            messagebox.showerror("Snapshot Export Failed", str(exc))
 
     def _relaunch_as_admin(self) -> None:
         if sys.platform != "win32":
@@ -1591,7 +1466,7 @@ class BadPageHunterGUI:
         self.root.destroy()
 
 
-def launch_gui(lang: str = "zh") -> int:
+def launch_gui(lang: str = "en") -> int:
     enable_dpi_and_dark_mode()
     root = tk.Tk()
     BadPageHunterGUI(root, lang=lang)

@@ -6,7 +6,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 import numpy as np
 
 from .bcd_manager import get_existing_bad_pfns, update_bcd_badmemory
@@ -81,7 +81,9 @@ def get_memory_status() -> Tuple[float, float, int]:
         total_gb = total_bytes / (1024 ** 3)
         avail_gb = total_gb * 0.5
         if sys.platform == "darwin":
-            out = subprocess.check_output(["vm_stat"], text=True, encoding="utf-8", errors="ignore")
+            out = subprocess.check_output(
+                ["vm_stat"], text=True, encoding="utf-8", errors="ignore", timeout=5.0
+            )
             free_pages = 0
             for line in out.splitlines():
                 if any(k in line for k in ("Pages free:", "Pages inactive:", "Pages speculative:")):
@@ -93,6 +95,27 @@ def get_memory_status() -> Tuple[float, float, int]:
         return total_gb, avail_gb, max(0, min(100, load))
     except Exception:
         return 16.0, 8.0, 50
+
+
+def compute_decommit_spans(base_va: int, block_sz: int, bad_page_vas: Iterable[int]) -> List[Tuple[int, int]]:
+    """
+    Compute exact (start_va, byte_length) spans of healthy 4KB pages to decommit inside an allocation block,
+    preserving only the faulty 4KB pages locked in RAM.
+    """
+    block_end = base_va + block_sz
+    sorted_bad = sorted({va & ~0xFFF for va in bad_page_vas if base_va <= (va & ~0xFFF) < block_end})
+    if not sorted_bad:
+        return [(base_va, block_sz)]
+
+    spans: List[Tuple[int, int]] = []
+    cursor = base_va
+    for bad_va in sorted_bad:
+        if bad_va > cursor:
+            spans.append((cursor, bad_va - cursor))
+        cursor = bad_va + 4096
+    if cursor < block_end:
+        spans.append((cursor, block_end - cursor))
+    return spans
 
 
 def recommend_hunter_params() -> Dict[str, Any]:
@@ -296,14 +319,12 @@ class BadPageHunter:
             )
 
         if IS_WINDOWS and kernel32 is not None:
-            min_bad_page = min(bad_page_vas)
-            max_bad_page = max(bad_page_vas) + 4096
-            if min_bad_page > base_va:
-                kernel32.VirtualFree(base_va, min_bad_page - base_va, MEM_DECOMMIT)
-            if max_bad_page < base_va + self.block_sz:
-                kernel32.VirtualFree(max_bad_page, (base_va + self.block_sz) - max_bad_page, MEM_DECOMMIT)
+            for span_va, span_len in compute_decommit_spans(base_va, self.block_sz, bad_page_vas):
+                kernel32.VirtualFree(span_va, span_len, MEM_DECOMMIT)
         self.pinned_blocks.append(base_va)
-        self.log(f"  [PINNED] Locked bad 4KB page(s) in RAM and decommitted healthy pages of {label}.")
+        self.log(
+            f"  [PINNED] Locked {len(bad_page_vas)} bad 4KB page(s) in RAM and decommitted all healthy pages of {label}."
+        )
         return flips
 
     def run(self, max_cycles: Optional[int] = None) -> Set[int]:
@@ -325,7 +346,9 @@ class BadPageHunter:
                 ):
                     old_cycle, old_blocks = fifo_queue.pop(0)
                     active_blocks = sum(len(b) for _, b in fifo_queue)
-                    self._emit_stats(cycle, len(fifo_queue), active_blocks * self.block_mb / 1024.0, f"Verifying Batch c{old_cycle}")
+                    self._emit_stats(
+                        cycle, len(fifo_queue), active_blocks * self.block_mb / 1024.0, f"Verifying Batch c{old_cycle}"
+                    )
                     flips = 0
                     for blk_i, (base_va, pat) in enumerate(old_blocks):
                         flips += self.inspect_and_free_block(base_va, pat, f"c{old_cycle}.{blk_i}")
@@ -361,7 +384,7 @@ class BadPageHunter:
                         active_blocks * self.block_mb / 1024.0,
                         f"Allocating Batch c{cycle} ({blk_idx + 1}/{self.blocks_per_batch})",
                     )
-                    time.sleep(0.03)
+                    self._stop_event.wait(0.03)
 
                 if new_blocks:
                     fifo_queue.append((cycle, new_blocks))
@@ -387,7 +410,7 @@ class BadPageHunter:
                         f"Charge-Retention Soak ({elapsed:.1f}s / {self.soak_seconds:.1f}s)",
                         soak_progress=pct,
                     )
-                    time.sleep(0.1)
+                    self._stop_event.wait(0.1)
         except KeyboardInterrupt:
             self.log("Interrupted by user. Cleaning up healthy test buffers...")
         finally:

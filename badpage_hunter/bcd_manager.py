@@ -3,17 +3,67 @@ import json
 import os
 import subprocess
 import sys
-from typing import Iterable, List, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if IS_WINDOWS else 0
+BCDEDIT_TIMEOUT_SEC = 15.0
 
 
 def _posix_store_path() -> str:
     base = os.path.expanduser("~/.config/win-badpage-hunter")
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "isolated_pfns.json")
+
+
+def _run_bcdedit(args: List[str], timeout: float = BCDEDIT_TIMEOUT_SEC) -> Tuple[int, str]:
+    try:
+        res = subprocess.run(
+            ["bcdedit"] + args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            creationflags=CREATE_NO_WINDOW,
+            timeout=timeout,
+        )
+        out = (res.stdout or res.stderr or "").strip()
+        return res.returncode, out
+    except subprocess.TimeoutExpired:
+        return 1, f"bcdedit timed out after {timeout:.0f}s"
+    except Exception as exc:
+        return 1, str(exc)
+
+
+def _write_bcd_dll_pfns(sorted_pfns: List[int]) -> bool:
+    """Write badmemorylist directly via native bcd.dll (avoids Windows 32 KB CLI length cap)."""
+    if not IS_WINDOWS or not sorted_pfns:
+        return False
+    try:
+        import struct
+        from ctypes import wintypes
+
+        bcd = ctypes.WinDLL("bcd.dll")
+        hStore = wintypes.HANDLE()
+        if (bcd.BcdOpenSystemStore(ctypes.byref(hStore)) & 0xFFFFFFFF) == 0:
+            try:
+                guid_badmem = ctypes.c_void_p.in_dll(bcd, "GUID_BAD_MEMORY_GROUP")
+                hObj = wintypes.HANDLE()
+                if (bcd.BcdOpenObject(hStore, ctypes.byref(guid_badmem), ctypes.byref(hObj)) & 0xFFFFFFFF) == 0:
+                    try:
+                        blob = struct.pack(f"<{len(sorted_pfns)}Q", *sorted_pfns)
+                        st = bcd.BcdSetElementData(hObj, 0x1700000A, blob, len(blob)) & 0xFFFFFFFF
+                        if st == 0:
+                            _run_bcdedit(["/set", "{badmemory}", "badmemoryaccess", "no"])
+                            return True
+                    finally:
+                        bcd.BcdCloseObject(hObj)
+            finally:
+                bcd.BcdCloseStore(hStore)
+    except Exception:
+        pass
+    return False
 
 
 def is_admin() -> bool:
@@ -68,17 +118,10 @@ def get_existing_bad_pfns() -> Set[int]:
     except Exception:
         pass
 
-    res = subprocess.run(
-        ["bcdedit", "/enum", "{badmemory}"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="ignore",
-        creationflags=CREATE_NO_WINDOW,
-    )
+    _rc, stdout = _run_bcdedit(["/enum", "{badmemory}"])
     pfns: Set[int] = set()
     in_list = False
-    for line in res.stdout.splitlines():
+    for line in stdout.splitlines():
         low = line.lower()
         if "badmemorylist" in low:
             in_list = True
@@ -140,6 +183,106 @@ def synthesize_imc_bank_pfns(pfns: Iterable[int], offsets: Tuple[int, ...] = (0,
     return expanded
 
 
+def analyze_pfn_clusters(pfns: Iterable[int], total_ram_gb: float = 0.0) -> Dict[str, Any]:
+    """
+    Analyze physical DRAM clustering, 1 GB rank-band locality, +3/+5 row-twin coverage,
+    and compute an overall DRAM containment health score (0..100).
+    """
+    sorted_pfns = sorted(set(pfns))
+    count = len(sorted_pfns)
+    if count == 0:
+        return {
+            "isolated_pages": 0,
+            "isolated_kb": 0,
+            "contiguous_runs": 0,
+            "row_groups_affected": 0,
+            "rank_bands_gb": {},
+            "missing_row_twins": [],
+            "health_score": 100,
+            "severity": "CLEAN",
+        }
+
+    pfn_set = set(sorted_pfns)
+    runs = 1
+    for prev, cur in zip(sorted_pfns, sorted_pfns[1:]):
+        if cur != prev + 1:
+            runs += 1
+
+    row_groups = {p >> 3 for p in sorted_pfns}
+    rank_bands: Dict[str, int] = {}
+    missing_twins: List[str] = []
+    for p in sorted_pfns:
+        gb_band = p >> 18  # 1 GiB = 262,144 x 4KB pages (2^18)
+        band_key = f"{gb_band}GB..{gb_band + 1}GB"
+        rank_bands[band_key] = rank_bands.get(band_key, 0) + 1
+        if (p & 7) in (3, 5):
+            twin = p ^ 6
+            if twin not in pfn_set:
+                missing_twins.append(f"0x{twin:x}")
+
+    bands_count = len(rank_bands)
+    # Health score: localized clusters (<=2 rank bands, <=256 pages) remain highly rescuable via BCD excision
+    penalty = min(40, len(row_groups) // 2) + max(0, (bands_count - 2) * 10) + min(20, len(missing_twins) * 2)
+    if count > 2048:
+        penalty += 25
+    score = max(10, 100 - penalty)
+
+    if count <= 256 and bands_count <= 2:
+        severity = "CONTAINED_CLUSTER"
+    elif count <= 2048 and bands_count <= 6:
+        severity = "MULTI_RANK_DECAY"
+    else:
+        severity = "SEVERE_SCATTER"
+
+    pct_ram = round((count * 4096) / (total_ram_gb * (1024 ** 3)) * 100.0, 6) if total_ram_gb > 0 else None
+    return {
+        "isolated_pages": count,
+        "isolated_kb": count * 4,
+        "isolated_ram_pct": pct_ram,
+        "contiguous_runs": runs,
+        "row_groups_affected": len(row_groups),
+        "rank_bands_gb": rank_bands,
+        "missing_row_twins": sorted(set(missing_twins)),
+        "health_score": score,
+        "severity": severity,
+    }
+
+
+def diff_status_snapshots(old_snap: Dict[str, Any], new_snap: Dict[str, Any]) -> Dict[str, Any]:
+    """Compare two status snapshots to identify newly isolated PFNs, newly excised frames, and cluster growth."""
+    old_pfns = {int(str(x), 0) for x in old_snap.get("isolated_pfns_hex", [])}
+    new_pfns = {int(str(x), 0) for x in new_snap.get("isolated_pfns_hex", [])}
+
+    added = sorted(new_pfns - old_pfns)
+    removed = sorted(old_pfns - new_pfns)
+
+    old_excised = {int(str(x), 0) for x in old_snap.get("excised_pfns_hex", [])}
+    new_excised = {int(str(x), 0) for x in new_snap.get("excised_pfns_hex", [])}
+    newly_excised = sorted(new_excised - old_excised)
+
+    old_bands = set((old_snap.get("cluster_analysis") or {}).get("rank_bands_gb", {}).keys())
+    new_bands = set((new_snap.get("cluster_analysis") or {}).get("rank_bands_gb", {}).keys())
+    new_rank_bands = sorted(new_bands - old_bands)
+
+    old_score = int((old_snap.get("cluster_analysis") or {}).get("health_score", 100))
+    new_score = int((new_snap.get("cluster_analysis") or {}).get("health_score", 100))
+
+    return {
+        "old_isolated_count": len(old_pfns),
+        "new_isolated_count": len(new_pfns),
+        "added_pfns_hex": [f"0x{p:x}" for p in added],
+        "removed_pfns_hex": [f"0x{p:x}" for p in removed],
+        "newly_excised_pfns_hex": [f"0x{p:x}" for p in newly_excised],
+        "new_rank_bands": new_rank_bands,
+        "old_ranges_count": len(old_snap.get("physical_ranges", [])),
+        "new_ranges_count": len(new_snap.get("physical_ranges", [])),
+        "health_score_delta": new_score - old_score,
+        "old_health_score": old_score,
+        "new_health_score": new_score,
+        "status": "STABLE" if not added else ("EXPANDED_NEW_BAND" if new_rank_bands else "NEW_PAGES_IN_EXISTING_BAND"),
+    }
+
+
 def update_bcd_badmemory(new_pfns: Iterable[int], include_row_twins: bool = True) -> Tuple[Set[int], str]:
     """
     Merge new PFNs into Windows BCD {badmemory} badmemorylist (or Linux soft_offline_page + store).
@@ -171,55 +314,14 @@ def update_bcd_badmemory(new_pfns: Iterable[int], include_row_twins: bool = True
         return pfns, f"Saved {len(pfns)} PFNs (soft-offlined={offlined}). GRUB: {grub_arg}"
 
     sorted_pfns = sorted(pfns)
-    try:
-        import struct
-        from ctypes import wintypes
-
-        bcd = ctypes.WinDLL("bcd.dll")
-        hStore = wintypes.HANDLE()
-        if (bcd.BcdOpenSystemStore(ctypes.byref(hStore)) & 0xFFFFFFFF) == 0:
-            try:
-                guid_badmem = ctypes.c_void_p.in_dll(bcd, "GUID_BAD_MEMORY_GROUP")
-                hObj = wintypes.HANDLE()
-                if (bcd.BcdOpenObject(hStore, ctypes.byref(guid_badmem), ctypes.byref(hObj)) & 0xFFFFFFFF) == 0:
-                    try:
-                        blob = struct.pack(f"<{len(sorted_pfns)}Q", *sorted_pfns)
-                        st = bcd.BcdSetElementData(hObj, 0x1700000A, blob, len(blob)) & 0xFFFFFFFF
-                        if st == 0:
-                            subprocess.run(
-                                ["bcdedit", "/set", "{badmemory}", "badmemoryaccess", "no"],
-                                capture_output=True,
-                                creationflags=CREATE_NO_WINDOW,
-                            )
-                            return pfns, f"Written {len(sorted_pfns)} PFNs via native bcd.dll (NTSTATUS=0x00000000)"
-                    finally:
-                        bcd.BcdCloseObject(hObj)
-            finally:
-                bcd.BcdCloseStore(hStore)
-    except Exception:
-        pass
+    if _write_bcd_dll_pfns(sorted_pfns):
+        return pfns, f"Written {len(sorted_pfns)} PFNs via native bcd.dll (NTSTATUS=0x00000000)"
 
     hex_list: List[str] = [f"0x{x:x}" for x in sorted_pfns]
-    cmd = ["bcdedit", "/set", "{badmemory}", "badmemorylist"] + hex_list
-    res = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="ignore",
-        creationflags=CREATE_NO_WINDOW,
-    )
-    subprocess.run(
-        ["bcdedit", "/set", "{badmemory}", "badmemoryaccess", "no"],
-        capture_output=True,
-        creationflags=CREATE_NO_WINDOW,
-    )
-    subprocess.run(
-        ["bcdedit", "/set", "{globalsettings}", "badmemoryaccess", "no"],
-        capture_output=True,
-        creationflags=CREATE_NO_WINDOW,
-    )
-    return pfns, (res.stdout or res.stderr).strip()
+    _rc, out = _run_bcdedit(["/set", "{badmemory}", "badmemorylist"] + hex_list)
+    _run_bcdedit(["/set", "{badmemory}", "badmemoryaccess", "no"])
+    _run_bcdedit(["/set", "{globalsettings}", "badmemoryaccess", "no"])
+    return pfns, out
 
 
 def remove_bcd_badmemory_pfns(pfns_to_remove: Iterable[int]) -> Tuple[Set[int], str]:
@@ -230,26 +332,22 @@ def remove_bcd_badmemory_pfns(pfns_to_remove: Iterable[int]) -> Tuple[Set[int], 
     existing = get_existing_bad_pfns()
     remaining = existing - set(pfns_to_remove)
     if not remaining:
-        ok, msg = clear_bcd_badmemory()
+        _ok, msg = clear_bcd_badmemory()
         return set(), msg
 
+    sorted_rem = sorted(remaining)
     if not IS_WINDOWS:
         store = _posix_store_path()
         with open(store, "w", encoding="utf-8") as f:
-            json.dump({"pfns": [f"0x{p:x}" for p in sorted(remaining)]}, f, indent=2)
+            json.dump({"pfns": [f"0x{p:x}" for p in sorted_rem]}, f, indent=2)
         return remaining, f"Updated PFN store ({len(remaining)} remaining)."
 
-    hex_list: List[str] = [f"0x{x:x}" for x in sorted(remaining)]
-    cmd = ["bcdedit", "/set", "{badmemory}", "badmemorylist"] + hex_list
-    res = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="ignore",
-        creationflags=CREATE_NO_WINDOW,
-    )
-    return remaining, (res.stdout or res.stderr).strip()
+    if _write_bcd_dll_pfns(sorted_rem):
+        return remaining, f"Updated {len(sorted_rem)} PFNs via native bcd.dll (NTSTATUS=0x00000000)"
+
+    hex_list: List[str] = [f"0x{x:x}" for x in sorted_rem]
+    _rc, out = _run_bcdedit(["/set", "{badmemory}", "badmemorylist"] + hex_list)
+    return remaining, out
 
 
 def clear_bcd_badmemory() -> Tuple[bool, str]:
@@ -263,13 +361,5 @@ def clear_bcd_badmemory() -> Tuple[bool, str]:
             os.remove(store)
         return True, "Cleared local isolated PFN store."
 
-    res = subprocess.run(
-        ["bcdedit", "/deletevalue", "{badmemory}", "badmemorylist"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="ignore",
-        creationflags=CREATE_NO_WINDOW,
-    )
-    out = (res.stdout or res.stderr).strip()
-    return res.returncode == 0, out
+    rc, out = _run_bcdedit(["/deletevalue", "{badmemory}", "badmemorylist"])
+    return rc == 0, out
